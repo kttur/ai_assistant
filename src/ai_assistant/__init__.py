@@ -1,0 +1,2 @@
+"""Home AI assistant package."""
+

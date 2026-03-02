@@ -1,0 +1,2 @@
+"""Terminal command execution adapters."""
+
