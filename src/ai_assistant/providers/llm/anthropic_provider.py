@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from ai_assistant.core.models import UserMessage
 
 DEFAULT_SYSTEM_PROMPT = """You are a helpful AI assistant replying in Telegram chat.
@@ -43,6 +45,11 @@ class AnthropicProvider:
             base_url=base_url.strip() or None,
             timeout=timeout_seconds,
         )
+        logging.getLogger(__name__).info(
+            "Anthropic provider initialized: model=%s base_url=%s",
+            self._model,
+            base_url.strip() or "default",
+        )
 
     async def generate_reply(self, message: UserMessage) -> str:
         return await self.generate_reply_for_model(message=message, model=None)
@@ -52,10 +59,17 @@ class AnthropicProvider:
         message: UserMessage,
         model: str | None = None,
     ) -> str:
+        logger = logging.getLogger(__name__)
         target_model = (model or self._model).strip()
         if not target_model:
             raise RuntimeError("Anthropic model is not configured.")
 
+        logger.debug(
+            "Anthropic request: user_id=%s model=%s prompt_chars=%d",
+            message.user_id,
+            target_model,
+            len(message.text),
+        )
         try:
             response = await self._client.messages.create(
                 model=target_model,
@@ -66,6 +80,12 @@ class AnthropicProvider:
                 ],
             )
         except Exception as exc:
+            logger.warning(
+                "Anthropic request failed: user_id=%s model=%s error=%s",
+                message.user_id,
+                target_model,
+                exc,
+            )
             raise RuntimeError(f"Anthropic request failed: {exc}") from exc
 
         chunks: list[str] = []
@@ -80,5 +100,11 @@ class AnthropicProvider:
                     chunks.append(maybe_text.strip())
 
         if chunks:
+            logger.debug(
+                "Anthropic response received: user_id=%s model=%s chunks=%d",
+                message.user_id,
+                target_model,
+                len(chunks),
+            )
             return "\n".join(chunks)
         raise RuntimeError("Anthropic returned empty response.")

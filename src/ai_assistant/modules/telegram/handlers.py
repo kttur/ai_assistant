@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from ai_assistant.core.interfaces import (
     MPCController,
     MediaController,
@@ -25,6 +27,8 @@ from ai_assistant.modules.telegram.handler_constants import (
 )
 from ai_assistant.modules.telegram.handler_types import PendingTextSettingInput as _PendingTextSettingInput
 from ai_assistant.providers.i18n.file_translation_service import FileTranslationService
+
+logger = logging.getLogger(__name__)
 
 
 class TelegramHandlers:
@@ -56,6 +60,11 @@ class TelegramHandlers:
         )
         self._terminal_mode_users: set[int] = set()
         self._pending_text_setting_inputs: dict[int, _PendingTextSettingInput] = {}
+        logger.info(
+            "Telegram handlers initialized: admin_telegram_id=%s terminal_runtime=%s",
+            self._admin_telegram_id,
+            "enabled" if self._terminal_executor is not None else "disabled",
+        )
 
 
 from ai_assistant.modules.telegram.handler_helpers import (

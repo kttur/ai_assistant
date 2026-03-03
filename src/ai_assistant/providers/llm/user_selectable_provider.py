@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
+
 from ai_assistant.core.interfaces import LLMProvider, PermissionChecker, UserSettingsStore
 from ai_assistant.core.models import UserMessage
+from ai_assistant.logging_utils import format_model_chain, text_preview
 from ai_assistant.providers.llm.arbiter import (
     build_arbiter_prompt,
     build_regeneration_prompt,
@@ -31,6 +34,8 @@ _AUTO_TIER_PRIORITY = {
     "balanced_cloud": 3,
     "premium_cloud": 4,
 }
+
+logger = logging.getLogger(__name__)
 
 
 class UserSelectableLLMProvider:
@@ -90,7 +95,16 @@ class UserSelectableLLMProvider:
     async def generate_reply(self, message: UserMessage) -> str:
         selected_provider, candidate_model = await self._read_user_preferences(user_id=message.user_id)
         allowed_providers = await self._get_allowed_providers(user_id=message.user_id)
+        logger.debug(
+            "LLM request received: user_id=%s selected_provider=%s selected_model=%s allowed_providers=%s text_preview=%r",
+            message.user_id,
+            selected_provider,
+            candidate_model,
+            allowed_providers,
+            text_preview(message.text),
+        )
         if not allowed_providers:
+            logger.error("No permitted LLM providers for user_id=%s", message.user_id)
             raise RuntimeError("No permitted LLM providers configured for this user.")
 
         if self._is_auto_mode_requested(selected_provider) and self._auto_router is not None:
@@ -102,6 +116,10 @@ class UserSelectableLLMProvider:
             )
             if auto_reply is not None:
                 return auto_reply
+            logger.info(
+                "Auto routing did not yield a reply, falling back to manual provider resolution: user_id=%s",
+                message.user_id,
+            )
 
         effective_provider = selected_provider
         if effective_provider == AUTO_PROVIDER_NAME:
@@ -112,6 +130,12 @@ class UserSelectableLLMProvider:
             candidate_model=candidate_model,
             allowed_providers=allowed_providers,
         )
+        logger.info(
+            "Resolved LLM target: user_id=%s provider=%s model=%s",
+            message.user_id,
+            provider_name,
+            model,
+        )
         reply = await self._generate_reply_with_provider(
             provider_name=provider_name,
             model=model,
@@ -119,6 +143,12 @@ class UserSelectableLLMProvider:
             suppress_errors=False,
         )
         if reply is None:
+            logger.error(
+                "Failed to generate reply from resolved provider: user_id=%s provider=%s model=%s",
+                message.user_id,
+                provider_name,
+                model,
+            )
             raise RuntimeError("No permitted LLM provider is available.")
         return reply
 
@@ -161,6 +191,12 @@ class UserSelectableLLMProvider:
                 raise RuntimeError(
                     f"No permitted LLM model for selected provider: {selected_provider}"
                 )
+            logger.debug(
+                "Resolved explicit provider/model selection: user_id=%s provider=%s model=%s",
+                user_id,
+                selected_provider,
+                resolved_model,
+            )
             return selected_provider, resolved_model
 
         provider_order: list[str] = []
@@ -171,6 +207,13 @@ class UserSelectableLLMProvider:
         for provider in allowed_providers:
             if provider not in provider_order:
                 provider_order.append(provider)
+        logger.debug(
+            "Provider resolution order: user_id=%s order=%s selected_provider=%s default_provider=%s",
+            user_id,
+            provider_order,
+            selected_provider,
+            self._default_provider,
+        )
 
         for provider in provider_order:
             provider_candidate_model = candidate_model if provider == selected_provider else None
@@ -181,8 +224,15 @@ class UserSelectableLLMProvider:
             )
             if resolved_model is None and self._provider_requires_model(provider):
                 continue
+            logger.debug(
+                "Resolved provider/model from ordered candidates: user_id=%s provider=%s model=%s",
+                user_id,
+                provider,
+                resolved_model,
+            )
             return provider, resolved_model
 
+        logger.error("No permitted LLM models configured for user_id=%s", user_id)
         raise RuntimeError("No permitted LLM models configured for this user.")
 
     async def _try_auto_route(
@@ -194,22 +244,44 @@ class UserSelectableLLMProvider:
         allowed_providers: list[str],
     ) -> str | None:
         if self._auto_router is None:
+            logger.debug("Auto-route skipped: router is not configured.")
             return None
 
         catalog = await self._build_router_catalog(user_id=user_id, allowed_providers=allowed_providers)
         if not catalog:
+            logger.warning("Auto-route skipped: empty router catalog for user_id=%s", user_id)
             return None
 
+        logger.debug(
+            "Auto-route catalog prepared: user_id=%s entries=%d chain=%s",
+            user_id,
+            len(catalog),
+            format_model_chain((item.provider, item.model) for item in catalog),
+        )
         try:
             decision = await self._auto_router.route(
                 message=message,
                 candidate_catalog=catalog,
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning("Auto-route failed for user_id=%s: %s", user_id, exc)
             return None
 
         low_confidence_policy = await self._read_auto_low_confidence_policy(user_id=user_id)
         low_confidence = decision.confidence < self._auto_low_confidence_threshold
+        logger.debug(
+            "Auto-route decision: user_id=%s confidence=%.2f threshold=%.2f low_confidence=%s policy=%s risk=%s complexity=%s topic=%s capabilities=%s chain=%s",
+            user_id,
+            decision.confidence,
+            self._auto_low_confidence_threshold,
+            low_confidence,
+            low_confidence_policy,
+            decision.risk_level,
+            decision.complexity,
+            decision.topic,
+            ",".join(decision.required_capabilities) or "-",
+            format_model_chain((item.provider, item.model) for item in decision.candidates),
+        )
         queue = self._build_auto_candidate_queue(
             decision=decision,
             catalog=catalog,
@@ -217,9 +289,23 @@ class UserSelectableLLMProvider:
             low_confidence=low_confidence,
             low_confidence_policy=low_confidence_policy,
         )
+        logger.debug(
+            "Auto-route candidate queue: user_id=%s queue=%s",
+            user_id,
+            ", ".join(
+                f"{item.provider}:{item.model}[{item.tier or '-'}|{item.reason or '-'}]"
+                for item in queue
+            ),
+        )
         for item in queue:
             provider = item.provider
             if provider not in allowed_providers:
+                logger.debug(
+                    "Skipping auto candidate due to provider permissions: user_id=%s provider=%s model=%s",
+                    user_id,
+                    provider,
+                    item.model,
+                )
                 continue
             resolved_model = await self._resolve_model_for_provider(
                 user_id=user_id,
@@ -228,7 +314,20 @@ class UserSelectableLLMProvider:
                 strict_candidate=True,
             )
             if resolved_model is None and self._provider_requires_model(provider):
+                logger.debug(
+                    "Skipping auto candidate due to model permissions: user_id=%s provider=%s candidate_model=%s",
+                    user_id,
+                    provider,
+                    item.model,
+                )
                 continue
+            logger.debug(
+                "Trying auto candidate: user_id=%s provider=%s model=%s reason=%s",
+                user_id,
+                provider,
+                resolved_model,
+                item.reason,
+            )
             reply = await self._generate_reply_with_provider(
                 provider_name=provider,
                 model=resolved_model,
@@ -236,6 +335,12 @@ class UserSelectableLLMProvider:
                 suppress_errors=True,
             )
             if reply is not None:
+                logger.info(
+                    "Auto-route specialist succeeded: user_id=%s provider=%s model=%s",
+                    user_id,
+                    provider,
+                    resolved_model,
+                )
                 return await self._apply_arbiter_if_needed(
                     user_id=user_id,
                     message=message,
@@ -246,6 +351,13 @@ class UserSelectableLLMProvider:
                     allowed_providers=allowed_providers,
                     catalog=catalog,
                 )
+            logger.debug(
+                "Auto candidate failed, trying next: user_id=%s provider=%s model=%s",
+                user_id,
+                provider,
+                resolved_model,
+            )
+        logger.warning("Auto-route exhausted candidate queue without reply: user_id=%s", user_id)
         return None
 
     async def _build_router_catalog(
@@ -272,6 +384,12 @@ class UserSelectableLLMProvider:
                         notes=self._catalog_notes(provider=provider),
                     )
                 )
+        logger.debug(
+            "Built router catalog: user_id=%s providers=%s entries=%d",
+            user_id,
+            allowed_providers,
+            len(entries),
+        )
         return tuple(entries)
 
     async def _get_allowed_models_for_provider(self, *, user_id: int, provider: str) -> tuple[str, ...]:
@@ -356,6 +474,11 @@ class UserSelectableLLMProvider:
                 )
             )
         if low_confidence and low_confidence_policy == LOW_CONFIDENCE_POLICY_UPGRADE_TIER:
+            logger.debug(
+                "Applying low-confidence queue reprioritization: policy=%s confidence=%.2f",
+                low_confidence_policy,
+                decision.confidence,
+            )
             queue = self._reprioritize_queue_for_low_confidence(
                 queue=queue,
                 catalog=catalog,
@@ -397,7 +520,8 @@ class UserSelectableLLMProvider:
         try:
             raw_provider = await self._user_settings_store.get_setting(user_id=user_id, key="llm_provider")
             raw_model = await self._user_settings_store.get_setting(user_id=user_id, key="llm_model")
-        except Exception:
+        except Exception as exc:
+            logger.debug("Failed to read LLM preferences for user_id=%s: %s", user_id, exc)
             return selected_provider, selected_model
 
         normalized_provider = self._normalize_provider(raw_provider)
@@ -410,6 +534,14 @@ class UserSelectableLLMProvider:
             selected_provider = explicit_provider
 
         selected_model = parsed_model
+        logger.debug(
+            "User LLM preferences: user_id=%s raw_provider=%s raw_model=%s selected_provider=%s selected_model=%s",
+            user_id,
+            raw_provider,
+            raw_model,
+            selected_provider,
+            selected_model,
+        )
         return selected_provider, selected_model
 
     async def _read_auto_low_confidence_policy(self, user_id: int) -> str:
@@ -420,12 +552,24 @@ class UserSelectableLLMProvider:
                 user_id=user_id,
                 key=LOW_CONFIDENCE_POLICY_SETTING_KEY,
             )
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "Failed to read low-confidence policy, using default: user_id=%s error=%s",
+                user_id,
+                exc,
+            )
             return self._default_low_confidence_policy
 
         normalized = (raw_value or "").strip().lower()
         if normalized in _LOW_CONFIDENCE_POLICIES:
             return normalized
+        if raw_value:
+            logger.debug(
+                "Unknown low-confidence policy for user_id=%s: %s; using default=%s",
+                user_id,
+                raw_value,
+                self._default_low_confidence_policy,
+            )
         return self._default_low_confidence_policy
 
     async def _get_allowed_providers(self, user_id: int) -> list[str]:
@@ -434,6 +578,7 @@ class UserSelectableLLMProvider:
             permission_name = self._provider_permission_name(provider)
             if await self._has_assistant_permission(user_id=user_id, permission_name=permission_name):
                 allowed.append(provider)
+        logger.debug("Allowed providers resolved: user_id=%s allowed=%s", user_id, allowed)
         return allowed
 
     async def _resolve_model_for_provider(
@@ -471,8 +616,22 @@ class UserSelectableLLMProvider:
                 continue
             permission_name = self._model_permission_name(provider=provider, model=model)
             if await self._has_assistant_permission(user_id=user_id, permission_name=permission_name):
+                logger.debug(
+                    "Resolved allowed model: user_id=%s provider=%s model=%s strict_candidate=%s",
+                    user_id,
+                    provider,
+                    model,
+                    strict_candidate,
+                )
                 return model
 
+        logger.debug(
+            "No allowed model resolved: user_id=%s provider=%s candidate_model=%s strict_candidate=%s",
+            user_id,
+            provider,
+            candidate_model,
+            strict_candidate,
+        )
         return None
 
     async def _generate_reply_with_provider(
@@ -485,6 +644,11 @@ class UserSelectableLLMProvider:
     ) -> str | None:
         provider = self._providers.get(provider_name)
         if provider is None:
+            logger.debug(
+                "Provider is unavailable in registry: provider=%s suppress_errors=%s",
+                provider_name,
+                suppress_errors,
+            )
             if suppress_errors:
                 return None
             raise RuntimeError("No permitted LLM provider is available.")
@@ -492,22 +656,49 @@ class UserSelectableLLMProvider:
         target_key = ModelHealthRegistry.build_target_key(provider=provider_name, model=model, scope="llm")
         if suppress_errors and self._health_registry is not None:
             if not self._health_registry.is_available(target_key):
+                logger.debug(
+                    "Skipping LLM target due to health cooldown: target=%s user_id=%s",
+                    target_key,
+                    message.user_id,
+                )
                 return None
 
+        logger.debug(
+            "Calling LLM provider: user_id=%s provider=%s model=%s suppress_errors=%s text_preview=%r",
+            message.user_id,
+            provider_name,
+            model,
+            suppress_errors,
+            text_preview(message.text),
+        )
         try:
             if hasattr(provider, "generate_reply_for_model"):
                 reply = await provider.generate_reply_for_model(message=message, model=model)  # type: ignore[attr-defined]
             else:
                 reply = await provider.generate_reply(message)
-        except Exception:
+        except Exception as exc:
             if self._health_registry is not None:
                 self._health_registry.record_failure(target_key)
+            logger.warning(
+                "LLM provider call failed: user_id=%s provider=%s model=%s error=%s",
+                message.user_id,
+                provider_name,
+                model,
+                exc,
+            )
             if suppress_errors:
                 return None
             raise
 
         if self._health_registry is not None:
             self._health_registry.record_success(target_key)
+        logger.debug(
+            "LLM provider call succeeded: user_id=%s provider=%s model=%s reply_chars=%d",
+            message.user_id,
+            provider_name,
+            model,
+            len(reply),
+        )
         return reply
 
     async def _apply_arbiter_if_needed(
@@ -523,6 +714,12 @@ class UserSelectableLLMProvider:
         catalog: tuple[RouterCatalogEntry, ...],
     ) -> str:
         if not self._should_use_arbiter(decision):
+            logger.debug(
+                "Arbiter skipped: user_id=%s risk=%s explicit_arbiter=%s",
+                user_id,
+                decision.risk_level,
+                bool(decision.arbiter and decision.arbiter.enabled),
+            )
             return specialist_reply
 
         arbiter_target = await self._resolve_arbiter_target(
@@ -532,9 +729,18 @@ class UserSelectableLLMProvider:
             catalog=catalog,
         )
         if arbiter_target is None:
+            logger.debug("Arbiter skipped: no eligible arbiter target for user_id=%s", user_id)
             return specialist_reply
 
         arbiter_provider, arbiter_model = arbiter_target
+        logger.info(
+            "Applying arbiter: user_id=%s provider=%s model=%s specialist_provider=%s specialist_model=%s",
+            user_id,
+            arbiter_provider,
+            arbiter_model,
+            specialist_provider,
+            specialist_model,
+        )
         arbiter_prompt = build_arbiter_prompt(
             user_text=message.text,
             specialist_answer=specialist_reply,
@@ -550,13 +756,22 @@ class UserSelectableLLMProvider:
             suppress_errors=True,
         )
         if not arbiter_reply:
+            logger.warning("Arbiter returned empty response for user_id=%s", user_id)
             return specialist_reply
 
         try:
             arbiter_decision = parse_arbiter_decision(arbiter_reply)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Arbiter decision parse failed for user_id=%s: %s", user_id, exc)
             return specialist_reply
 
+        logger.debug(
+            "Arbiter decision: user_id=%s action=%s has_final_answer=%s has_regenerate_prompt=%s",
+            user_id,
+            arbiter_decision.action,
+            bool(arbiter_decision.final_answer),
+            bool(arbiter_decision.regenerate_prompt),
+        )
         if arbiter_decision.action == "approve":
             return arbiter_decision.final_answer or specialist_reply
         if arbiter_decision.action == "edit":
@@ -583,6 +798,12 @@ class UserSelectableLLMProvider:
             suppress_errors=True,
         )
         if regenerated_reply:
+            logger.info(
+                "Regenerated specialist response after arbiter feedback: user_id=%s provider=%s model=%s",
+                user_id,
+                specialist_provider,
+                specialist_model,
+            )
             return regenerated_reply
         return arbiter_decision.final_answer or specialist_reply
 
@@ -602,11 +823,18 @@ class UserSelectableLLMProvider:
                 allowed_providers=allowed_providers,
             )
             if explicit_target is not None:
+                logger.debug(
+                    "Using explicit arbiter target: user_id=%s provider=%s model=%s",
+                    user_id,
+                    explicit_target[0],
+                    explicit_target[1],
+                )
                 return explicit_target
 
         if decision.risk_level != "high":
             return None
 
+        logger.debug("Selecting fallback arbiter target from high-tier catalog for user_id=%s", user_id)
         sorted_catalog = sorted(
             catalog,
             key=lambda item: (
@@ -623,6 +851,12 @@ class UserSelectableLLMProvider:
                 allowed_providers=allowed_providers,
             )
             if target is not None:
+                logger.debug(
+                    "Resolved fallback arbiter target: user_id=%s provider=%s model=%s",
+                    user_id,
+                    target[0],
+                    target[1],
+                )
                 return target
         return None
 
@@ -701,14 +935,26 @@ class UserSelectableLLMProvider:
 
     async def _has_assistant_permission(self, user_id: int, permission_name: str) -> bool:
         if self._admin_telegram_id is not None and user_id == self._admin_telegram_id:
+            logger.debug(
+                "Permission granted via admin bypass: user_id=%s permission=%s",
+                user_id,
+                permission_name,
+            )
             return True
         if self._permission_checker is None:
             return True
-        return await self._permission_checker.has_permission(
+        allowed = await self._permission_checker.has_permission(
             user_id=user_id,
             permission_type="assistant",
             name=permission_name,
         )
+        logger.debug(
+            "Permission check: user_id=%s permission=%s allowed=%s",
+            user_id,
+            permission_name,
+            allowed,
+        )
+        return allowed
 
     @staticmethod
     def _provider_permission_name(provider: str) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from telegram.ext import (
     Application,
@@ -13,6 +14,8 @@ from telegram.ext import (
 
 from ai_assistant.modules.telegram.handlers import TelegramHandlers
 
+logger = logging.getLogger(__name__)
+
 
 class TelegramBotModule:
     def __init__(self, token: str, handlers: TelegramHandlers) -> None:
@@ -22,6 +25,7 @@ class TelegramBotModule:
         self._handlers = handlers
 
     def _build_application(self) -> Application:
+        logger.debug("Building Telegram application handlers.")
         application = ApplicationBuilder().token(self._token).build()
         application.add_handler(CommandHandler("start", self._handlers.handle_start))
         application.add_handler(CommandHandler("id", self._handlers.handle_id))
@@ -67,4 +71,5 @@ class TelegramBotModule:
         except RuntimeError:
             asyncio.set_event_loop(asyncio.new_event_loop())
         application = self._build_application()
+        logger.info("Starting Telegram polling loop.")
         application.run_polling(drop_pending_updates=True)

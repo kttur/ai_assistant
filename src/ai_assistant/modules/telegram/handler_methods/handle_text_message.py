@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
@@ -34,6 +35,9 @@ from ai_assistant.modules.telegram.handler_functions import (
     render_user_section,
 )
 
+logger = logging.getLogger(__name__)
+
+
 async def handle_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await self._reject_if_not_allowed(update):
         return
@@ -47,6 +51,12 @@ async def handle_text_message(self, update: Update, context: ContextTypes.DEFAUL
         return
 
     user_id = update.effective_user.id
+    logger.debug(
+        "Telegram text message received: user_id=%s terminal_mode=%s text_chars=%d",
+        user_id,
+        user_id in self._terminal_mode_users,
+        len(user_text),
+    )
     if user_id in self._terminal_mode_users:
         await self._handle_terminal_command(
             update=update,
@@ -60,6 +70,7 @@ async def handle_text_message(self, update: Update, context: ContextTypes.DEFAUL
         user_id=user_id,
         new_value=user_text,
     ):
+        logger.debug("Telegram text consumed as settings input: user_id=%s", user_id)
         return
 
     if await self._reject_if_no_message_permission(update, "general", "assistant"):

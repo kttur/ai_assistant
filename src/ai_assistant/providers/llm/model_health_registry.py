@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+
+logger = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -55,6 +58,7 @@ class ModelHealthRegistry:
         state.failure_count = 0
         state.last_success_at = now or _utc_now()
         state.cooldown_until = None
+        logger.debug("Model health marked success: target=%s", normalized)
 
     def record_failure(self, target: str, now: datetime | None = None) -> None:
         normalized = self._normalize_target(target)
@@ -67,6 +71,12 @@ class ModelHealthRegistry:
             self._base_cooldown_seconds * (2 ** (state.failure_count - 1)),
         )
         state.cooldown_until = ts + timedelta(seconds=cooldown_seconds)
+        logger.warning(
+            "Model health failure recorded: target=%s failures=%d cooldown_until=%s",
+            normalized,
+            state.failure_count,
+            state.cooldown_until.isoformat(),
+        )
 
     def get_snapshot(self, target: str, now: datetime | None = None) -> ModelHealthSnapshot | None:
         normalized = self._normalize_target(target)
@@ -96,4 +106,3 @@ class ModelHealthRegistry:
         if not normalized:
             raise ValueError("Health target key cannot be empty.")
         return normalized
-

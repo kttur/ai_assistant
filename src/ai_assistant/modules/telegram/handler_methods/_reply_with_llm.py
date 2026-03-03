@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
@@ -34,6 +35,9 @@ from ai_assistant.modules.telegram.handler_functions import (
     render_user_section,
 )
 
+logger = logging.getLogger(__name__)
+
+
 async def _reply_with_llm(
     self,
     user_id: int,
@@ -44,6 +48,7 @@ async def _reply_with_llm(
     if not update.effective_message:
         return
 
+    logger.info("Telegram LLM request started: user_id=%s", user_id)
     typing_task: asyncio.Task | None = None
     bot = getattr(context, "bot", None)
     chat = getattr(update, "effective_chat", None)
@@ -55,11 +60,17 @@ async def _reply_with_llm(
                 self._typing_heartbeat(bot=bot, chat_id=chat_id)
             )
         except Exception:
+            logger.debug(
+                "Unable to start typing heartbeat: user_id=%s chat_id=%s",
+                user_id,
+                chat_id,
+            )
             typing_task = None
 
     try:
         reply = await self._assistant_service.process_text(user_id=user_id, text=user_text)
     except Exception as exc:
+        logger.exception("Telegram LLM request failed: user_id=%s error=%s", user_id, exc)
         await update.effective_message.reply_text(f"Ошибка LLM: {exc}")
         return
     finally:
@@ -70,6 +81,7 @@ async def _reply_with_llm(
             except asyncio.CancelledError:
                 pass
 
+    logger.info("Telegram LLM request completed: user_id=%s reply_chars=%d", user_id, len(reply.text))
     await self._send_llm_reply(update=update, text=reply.text)
 
 

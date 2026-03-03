@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from ai_assistant.bootstrap_infra import (
     build_media_controller,
     build_mpc_controller,
@@ -23,8 +25,11 @@ from ai_assistant.modules.telegram.handlers import TelegramHandlers
 from ai_assistant.providers.memory.in_memory_store import InMemoryStore
 from ai_assistant.providers.system.assistant_command_executor import SystemAssistantCommandExecutor
 
+logger = logging.getLogger(__name__)
+
 
 def build_channel_module(settings: Settings) -> ChannelModule:
+    logger.info("Building channel module for channel=%s", settings.assistant_channel)
     memory_store = InMemoryStore()
     translation_service = build_translation_service(settings)
     permission_checker = build_permission_checker(settings)
@@ -32,6 +37,7 @@ def build_channel_module(settings: Settings) -> ChannelModule:
     available_providers = build_available_provider_names(settings)
     provider_instances = build_llm_provider_instances(settings, available_providers)
     enabled_provider_names = tuple(provider_instances.keys())
+    logger.info("Enabled LLM providers: %s", ", ".join(enabled_provider_names))
 
     (
         extra_setting_definitions,
@@ -74,6 +80,7 @@ def build_channel_module(settings: Settings) -> ChannelModule:
 
     channel = settings.assistant_channel.lower()
     if channel == "telegram":
+        logger.info("Initializing Telegram channel module")
         handlers = TelegramHandlers(
             assistant_service=assistant_service,
             user_settings_store=user_settings_store,
@@ -90,4 +97,5 @@ def build_channel_module(settings: Settings) -> ChannelModule:
             token=settings.telegram_bot_token,
             handlers=handlers,
         )
+    logger.error("Unsupported assistant channel requested: %s", settings.assistant_channel)
     raise ValueError(f"Unsupported channel: {settings.assistant_channel}")

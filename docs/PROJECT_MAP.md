@@ -197,7 +197,8 @@ ai_assistant
 ├── __init__.py
 ├── __main__.py
 ├── app.py
-└── bootstrap.py
+├── bootstrap.py
+└── logging_utils.py
 ```
 
 ### `tests`
@@ -266,20 +267,20 @@ context
 
 ## Largest Python Files in `src`
 
-- `src\ai_assistant\providers\llm\user_selectable_provider.py`: 746 lines
+- `src\ai_assistant\providers\llm\user_selectable_provider.py`: 992 lines
+- `src\ai_assistant\core\service.py`: 368 lines
 - `src\ai_assistant\modules\telegram\handler_methods\handle_settings_callback.py`: 308 lines
-- `src\ai_assistant\core\service.py`: 285 lines
 - `src\ai_assistant\providers\system\voicemeeter_output_controller.py`: 263 lines
 - `src\ai_assistant\providers\system\mpc_hc_controller.py`: 258 lines
+- `src\ai_assistant\providers\llm\auto_router.py`: 257 lines
 - `src\ai_assistant\providers\permissions\postgres_permission_checker.py`: 253 lines
 - `src\ai_assistant\providers\settings\in_memory_user_settings_store.py`: 232 lines
 - `src\ai_assistant\devtools\sync_docs.py`: 223 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_interactive.py`: 222 lines
 - `src\ai_assistant\config\settings.py`: 217 lines
+- `src\ai_assistant\modules\telegram\handlers.py`: 203 lines
 - `src\ai_assistant\providers\permissions\in_memory_permission_checker.py`: 202 lines
-- `src\ai_assistant\providers\llm\auto_router.py`: 194 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_executor.py`: 194 lines
-- `src\ai_assistant\modules\telegram\handlers.py`: 194 lines
 - `src\ai_assistant\providers\system\assistant_command_executor.py`: 192 lines
 
 ## Largest Python Files in `tests`

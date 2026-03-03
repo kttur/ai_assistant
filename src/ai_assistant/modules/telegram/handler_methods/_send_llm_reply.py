@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
@@ -34,10 +35,14 @@ from ai_assistant.modules.telegram.handler_functions import (
     render_user_section,
 )
 
+logger = logging.getLogger(__name__)
+
+
 async def _send_llm_reply(self, update: Update, text: str) -> None:
     if not update.effective_message:
         return
     try:
+        logger.debug("Sending Telegram reply with HTML parse mode: chars=%d", len(text))
         await update.effective_message.reply_text(
             text,
             parse_mode=ParseMode.HTML,
@@ -45,6 +50,7 @@ async def _send_llm_reply(self, update: Update, text: str) -> None:
         )
     except BadRequest:
         # Fallback to plain text if model produced invalid Telegram HTML.
+        logger.warning("Telegram HTML parse failed, retrying plain text response.")
         await update.effective_message.reply_text(text)
 
 

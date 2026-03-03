@@ -36,6 +36,7 @@ class RouteDecision:
     required_capabilities: tuple[str, ...]
     candidates: tuple[RouteCandidate, ...]
     arbiter: RouteArbiter | None = None
+    topic: str = "general"
 
 
 class RouteDecisionParseError(RuntimeError):
@@ -75,6 +76,7 @@ def parse_route_decision(raw_text: str) -> RouteDecision:
     risk_level = str(payload.get("risk_level", "unknown")).strip().lower() or "unknown"
     complexity = str(payload.get("complexity", "unknown")).strip().lower() or "unknown"
     required_capabilities = _parse_required_capabilities(payload.get("required_capabilities"))
+    topic = _parse_topic(payload.get("topic"))
 
     return RouteDecision(
         confidence=confidence,
@@ -83,6 +85,7 @@ def parse_route_decision(raw_text: str) -> RouteDecision:
         required_capabilities=required_capabilities,
         candidates=tuple(candidates),
         arbiter=arbiter,
+        topic=topic,
     )
 
 
@@ -145,3 +148,11 @@ def _parse_arbiter(value: object) -> RouteArbiter | None:
     model = str(value.get("model", "")).strip() or None
     return RouteArbiter(enabled=enabled, provider=provider, model=model)
 
+
+def _parse_topic(value: object) -> str:
+    if value is None:
+        return "general"
+    topic = str(value).strip().lower()
+    if not topic:
+        return "general"
+    return topic

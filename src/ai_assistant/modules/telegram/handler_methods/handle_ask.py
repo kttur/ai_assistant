@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from telegram import Update
 from telegram.constants import ChatAction, ParseMode
@@ -34,6 +35,9 @@ from ai_assistant.modules.telegram.handler_functions import (
     render_user_section,
 )
 
+logger = logging.getLogger(__name__)
+
+
 async def handle_ask(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if await self._reject_if_not_allowed(update):
         return
@@ -51,6 +55,11 @@ async def handle_ask(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not user_text:
         await update.effective_message.reply_text("Использование: /ask <вопрос>")
         return
+    logger.debug(
+        "Telegram /ask command received: user_id=%s text_chars=%d",
+        update.effective_user.id,
+        len(user_text),
+    )
 
     await self._reply_with_llm(
         user_id=update.effective_user.id,

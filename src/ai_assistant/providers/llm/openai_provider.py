@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from ai_assistant.core.models import UserMessage
 
 DEFAULT_SYSTEM_PROMPT = """You are a helpful AI assistant replying in Telegram chat.
@@ -43,6 +45,11 @@ class OpenAIProvider:
             base_url=base_url.strip() or None,
             timeout=timeout_seconds,
         )
+        logging.getLogger(__name__).info(
+            "OpenAI provider initialized: model=%s base_url=%s",
+            self._model,
+            base_url.strip() or "default",
+        )
 
     async def generate_reply(self, message: UserMessage) -> str:
         return await self.generate_reply_for_model(message=message, model=None)
@@ -52,10 +59,17 @@ class OpenAIProvider:
         message: UserMessage,
         model: str | None = None,
     ) -> str:
+        logger = logging.getLogger(__name__)
         target_model = (model or self._model).strip()
         if not target_model:
             raise RuntimeError("OpenAI model is not configured.")
 
+        logger.debug(
+            "OpenAI request: user_id=%s model=%s prompt_chars=%d",
+            message.user_id,
+            target_model,
+            len(message.text),
+        )
         try:
             completion = await self._client.chat.completions.create(
                 model=target_model,
@@ -65,6 +79,12 @@ class OpenAIProvider:
                 ],
             )
         except Exception as exc:
+            logger.warning(
+                "OpenAI request failed: user_id=%s model=%s error=%s",
+                message.user_id,
+                target_model,
+                exc,
+            )
             raise RuntimeError(f"OpenAI request failed: {exc}") from exc
 
         choices = getattr(completion, "choices", None)
@@ -74,6 +94,12 @@ class OpenAIProvider:
         first = choices[0]
         content = getattr(getattr(first, "message", None), "content", None)
         if isinstance(content, str) and content.strip():
+            logger.debug(
+                "OpenAI response received: user_id=%s model=%s reply_chars=%d",
+                message.user_id,
+                target_model,
+                len(content.strip()),
+            )
             return content.strip()
 
         if isinstance(content, list):
@@ -87,6 +113,12 @@ class OpenAIProvider:
                     if isinstance(maybe_text, str) and maybe_text.strip():
                         chunks.append(maybe_text.strip())
             if chunks:
+                logger.debug(
+                    "OpenAI response received (chunked): user_id=%s model=%s chunks=%d",
+                    message.user_id,
+                    target_model,
+                    len(chunks),
+                )
                 return "\n".join(chunks)
 
         raise RuntimeError("OpenAI returned empty response.")

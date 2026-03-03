@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 from ai_assistant.config.settings import Settings
 from ai_assistant.core.interfaces import LLMProvider
 from ai_assistant.providers.llm.auto_router import PolicyBasedAutoRouter, RouterBackend
 from ai_assistant.providers.llm.model_health_registry import ModelHealthRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def build_auto_router(
@@ -37,8 +41,13 @@ def build_auto_router(
             backends.append(cloud_backend)
 
     if not backends:
+        logger.info("Auto-router is disabled: no valid router backends configured.")
         return None
 
+    logger.info(
+        "Auto-router enabled with backends: %s",
+        ", ".join(f"{item.name}:{item.provider_name}:{item.model}" for item in backends),
+    )
     return PolicyBasedAutoRouter(
         backends=tuple(backends),
         timeout_seconds=settings.auto_router_timeout_seconds,
@@ -56,13 +65,24 @@ def _build_backend(
 ) -> RouterBackend | None:
     normalized_provider = provider_name.strip().lower()
     if not normalized_provider:
+        logger.debug("Skipping auto-router backend %s: empty provider.", name)
         return None
     provider_instance = provider_instances.get(normalized_provider)
     if provider_instance is None:
+        logger.debug(
+            "Skipping auto-router backend %s: provider %s is not initialized.",
+            name,
+            normalized_provider,
+        )
         return None
 
     model = configured_model.strip() or default_models.get(normalized_provider, "").strip()
     if not model:
+        logger.debug(
+            "Skipping auto-router backend %s: no model configured for provider %s.",
+            name,
+            normalized_provider,
+        )
         return None
 
     return RouterBackend(
@@ -71,4 +91,3 @@ def _build_backend(
         model=model,
         provider=provider_instance,
     )
-

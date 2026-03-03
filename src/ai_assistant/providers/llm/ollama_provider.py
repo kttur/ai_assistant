@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from urllib import error, request
 
 from ai_assistant.core.models import UserMessage
@@ -18,6 +19,7 @@ Formatting requirements:
 - Exception: if prompt explicitly requests tool calls, output exact <tool_call>{...}</tool_call>.
 """
 DEFAULT_USER_AGENT = "python-requests/2.32.3"
+logger = logging.getLogger(__name__)
 
 
 class OllamaProvider:
@@ -53,6 +55,11 @@ class OllamaProvider:
         header_value = auth_header_value.strip()
         if header_name and header_value:
             self._request_headers[header_name] = header_value
+        logger.info(
+            "Ollama provider initialized: base_url=%s model=%s",
+            self._base_url,
+            self._model,
+        )
 
     async def generate_reply(self, message: UserMessage) -> str:
         return await self.generate_reply_for_model(message=message, model=None)
@@ -65,6 +72,12 @@ class OllamaProvider:
         target_model = (model or self._model).strip()
         if not target_model:
             raise RuntimeError("Ollama model is not configured.")
+        logger.debug(
+            "Ollama request: user_id=%s model=%s prompt_chars=%d",
+            message.user_id,
+            target_model,
+            len(message.text),
+        )
         payload = {
             "model": target_model,
             "prompt": message.text,
@@ -86,11 +99,17 @@ class OllamaProvider:
             try:
                 with request.urlopen(req, timeout=self._timeout_seconds) as response:
                     body = response.read().decode("utf-8")
+                logger.debug("Ollama request succeeded via %s", target_url)
                 break
             except error.HTTPError as exc:
                 is_last_attempt = index == len(self._generate_urls) - 1
                 should_retry_alt_path = exc.code in {403, 404} and not is_last_attempt
                 if should_retry_alt_path:
+                    logger.debug(
+                        "Ollama HTTP %s on %s, retrying alternate URL",
+                        exc.code,
+                        target_url,
+                    )
                     continue
                 error_body = ""
                 try:
@@ -98,8 +117,10 @@ class OllamaProvider:
                 except Exception:
                     pass
                 detail = f" Ollama response: {error_body[:300]}" if error_body else ""
+                logger.warning("Ollama HTTP error %s via %s", exc.code, target_url)
                 raise RuntimeError(f"Ollama HTTP error {exc.code}.{detail}") from exc
             except error.URLError as exc:
+                logger.warning("Ollama is unreachable via %s: %s", target_url, exc.reason)
                 raise RuntimeError(f"Ollama is unreachable: {exc.reason}") from exc
 
         try:
@@ -114,4 +135,5 @@ class OllamaProvider:
         text = str(parsed.get("response", "")).strip()
         if not text:
             raise RuntimeError("Empty response from Ollama.")
+        logger.debug("Ollama response received: reply_chars=%d", len(text))
         return text

@@ -19,7 +19,7 @@ Routing rules:
 - Prefer cheap local models for simple low-risk tasks.
 - Prefer stronger cloud models for high-risk or hard tasks.
 - Return multiple candidates ordered by priority for fallback handling.
-- Include confidence (0..1), risk_level, complexity, required_capabilities.
+- Include confidence (0..1), risk_level, complexity, topic, required_capabilities.
 - Output ONLY one JSON object, no markdown and no extra text.
 """
 
@@ -49,10 +49,9 @@ def build_router_prompt(
         user_text,
         "",
         "Output schema (JSON only):",
-        '{"confidence":0.0,"risk_level":"low|medium|high","complexity":"low|medium|high",'
+        '{"confidence":0.0,"risk_level":"low|medium|high","complexity":"low|medium|high","topic":"coding",'
         '"required_capabilities":["reasoning"],'
         '"candidates":[{"provider":"ollama","model":"qwen3:8b","tier":"cheap_local","reason":"..."}],'
         '"arbiter":{"enabled":false,"provider":"openai","model":"gpt-4.1-mini"}}',
     ]
     return "\n".join(lines)
-
