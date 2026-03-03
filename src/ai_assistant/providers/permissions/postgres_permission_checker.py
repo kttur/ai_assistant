@@ -2,140 +2,27 @@ from __future__ import annotations
 
 import asyncio
 
-CREATE_TABLES_SQL = """
-CREATE TABLE IF NOT EXISTS permissions (
-    id BIGSERIAL PRIMARY KEY,
-    type TEXT NOT NULL CHECK (type IN ('general', 'command', 'assistant')),
-    name TEXT NOT NULL,
-    UNIQUE (type, name)
-);
-
-CREATE TABLE IF NOT EXISTS user_permissions (
-    user_id BIGINT NOT NULL,
-    permission_id BIGINT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
-    is_active BOOLEAN NOT NULL,
-    PRIMARY KEY (user_id, permission_id)
-);
-
-CREATE TABLE IF NOT EXISTS roles (
-    id BIGSERIAL PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE
-);
-
-CREATE TABLE IF NOT EXISTS role_permissions (
-    role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    permission_id BIGINT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
-    PRIMARY KEY (role_id, permission_id)
-);
-
-CREATE TABLE IF NOT EXISTS user_roles (
-    user_id BIGINT NOT NULL,
-    role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, role_id)
-);
-"""
-
-HAS_PERMISSION_SQL = """
-WITH target_permission AS (
-    SELECT id
-    FROM permissions
-    WHERE type = %s AND name = %s
-    LIMIT 1
-),
-user_override AS (
-    SELECT up.is_active
-    FROM user_permissions up
-    JOIN target_permission tp ON tp.id = up.permission_id
-    WHERE up.user_id = %s
-    LIMIT 1
-),
-has_role_permission AS (
-    SELECT EXISTS (
-        SELECT 1
-        FROM user_roles ur
-        JOIN role_permissions rp ON rp.role_id = ur.role_id
-        JOIN target_permission tp ON tp.id = rp.permission_id
-        WHERE ur.user_id = %s
-    ) AS value
+from ai_assistant.providers.permissions.postgres_permission_checker_helpers import (
+    ALLOWED_PERMISSION_TYPES,
+    build_permission_report,
+    normalize_permission_parts,
+    normalize_role_name,
 )
-SELECT COALESCE(
-    (SELECT is_active FROM user_override),
-    (SELECT value FROM has_role_permission),
-    FALSE
-);
-"""
-
-CREATE_ROLE_SQL = """
-INSERT INTO roles (name)
-VALUES (%s)
-ON CONFLICT (name) DO NOTHING;
-"""
-
-GET_ROLE_ID_SQL = """
-SELECT id FROM roles WHERE name = %s LIMIT 1;
-"""
-
-GET_PERMISSION_ID_SQL = """
-SELECT id FROM permissions WHERE type = %s AND name = %s LIMIT 1;
-"""
-
-UPSERT_PERMISSION_SQL = """
-INSERT INTO permissions (type, name)
-VALUES (%s, %s)
-ON CONFLICT (type, name)
-DO UPDATE SET name = EXCLUDED.name
-RETURNING id;
-"""
-
-UPSERT_USER_PERMISSION_SQL = """
-INSERT INTO user_permissions (user_id, permission_id, is_active)
-VALUES (%s, %s, %s)
-ON CONFLICT (user_id, permission_id)
-DO UPDATE SET is_active = EXCLUDED.is_active;
-"""
-
-ASSIGN_ROLE_SQL = """
-INSERT INTO user_roles (user_id, role_id)
-VALUES (%s, %s)
-ON CONFLICT (user_id, role_id) DO NOTHING;
-"""
-
-GRANT_ROLE_PERMISSION_SQL = """
-INSERT INTO role_permissions (role_id, permission_id)
-VALUES (%s, %s)
-ON CONFLICT (role_id, permission_id) DO NOTHING;
-"""
-
-REVOKE_ROLE_PERMISSION_SQL = """
-DELETE FROM role_permissions
-WHERE role_id = %s AND permission_id = %s;
-"""
-
-GET_USER_ROLES_SQL = """
-SELECT r.name
-FROM user_roles ur
-JOIN roles r ON r.id = ur.role_id
-WHERE ur.user_id = %s
-ORDER BY r.name;
-"""
-
-GET_USER_OVERRIDES_SQL = """
-SELECT p.type, p.name, up.is_active
-FROM user_permissions up
-JOIN permissions p ON p.id = up.permission_id
-WHERE up.user_id = %s
-ORDER BY p.type, p.name;
-"""
-
-GET_USER_ROLE_PERMISSIONS_SQL = """
-SELECT r.name, p.type, p.name
-FROM user_roles ur
-JOIN roles r ON r.id = ur.role_id
-JOIN role_permissions rp ON rp.role_id = ur.role_id
-JOIN permissions p ON p.id = rp.permission_id
-WHERE ur.user_id = %s
-ORDER BY r.name, p.type, p.name;
-"""
+from ai_assistant.providers.permissions.postgres_permission_checker_sql import (
+    ASSIGN_ROLE_SQL,
+    CREATE_ROLE_SQL,
+    CREATE_TABLES_SQL,
+    GET_PERMISSION_ID_SQL,
+    GET_ROLE_ID_SQL,
+    GET_USER_OVERRIDES_SQL,
+    GET_USER_ROLE_PERMISSIONS_SQL,
+    GET_USER_ROLES_SQL,
+    GRANT_ROLE_PERMISSION_SQL,
+    HAS_PERMISSION_SQL,
+    REVOKE_ROLE_PERMISSION_SQL,
+    UPSERT_PERMISSION_SQL,
+    UPSERT_USER_PERMISSION_SQL,
+)
 
 
 class PostgresPermissionChecker:
@@ -155,7 +42,7 @@ class PostgresPermissionChecker:
     async def has_permission(self, user_id: int, permission_type: str, name: str) -> bool:
         normalized_type = permission_type.strip().lower()
         normalized_name = name.strip().lower()
-        if normalized_type not in {"general", "command", "assistant"}:
+        if normalized_type not in ALLOWED_PERMISSION_TYPES:
             return False
         if not normalized_name:
             return False
@@ -251,23 +138,6 @@ class PostgresPermissionChecker:
                 if not row:
                     return False
                 return bool(row[0])
-
-    @staticmethod
-    def _normalize_role_name(role_name: str) -> str:
-        normalized = role_name.strip().lower()
-        if not normalized:
-            raise ValueError("Role name must not be empty.")
-        return normalized
-
-    @staticmethod
-    def _normalize_permission_parts(permission_type: str, name: str) -> tuple[str, str]:
-        normalized_type = permission_type.strip().lower()
-        normalized_name = name.strip().lower()
-        if normalized_type not in {"general", "command", "assistant"}:
-            raise ValueError("permission_type must be one of: general, command, assistant.")
-        if not normalized_name:
-            raise ValueError("permission name must not be empty.")
-        return normalized_type, normalized_name
 
     def _ensure_permission_id_sync(self, permission_type: str, name: str) -> int:
         with self._psycopg.connect(self._dsn) as conn:
@@ -372,55 +242,12 @@ class PostgresPermissionChecker:
                 override_rows = cur.fetchall()
                 cur.execute(GET_USER_ROLE_PERMISSIONS_SQL, (user_id,))
                 role_rows = cur.fetchall()
+        return build_permission_report(override_rows=override_rows, role_rows=role_rows)
 
-        user_overrides: list[dict[str, object]] = [
-            {
-                "type": str(row[0]),
-                "name": str(row[1]),
-                "is_active": bool(row[2]),
-            }
-            for row in override_rows
-        ]
-        role_permissions: list[dict[str, object]] = [
-            {
-                "role": str(row[0]),
-                "type": str(row[1]),
-                "name": str(row[2]),
-            }
-            for row in role_rows
-        ]
+    @staticmethod
+    def _normalize_role_name(role_name: str) -> str:
+        return normalize_role_name(role_name)
 
-        override_map: dict[tuple[str, str], bool] = {
-            (str(item["type"]), str(item["name"])): bool(item["is_active"])
-            for item in user_overrides
-        }
-        role_map: dict[tuple[str, str], set[str]] = {}
-        for item in role_permissions:
-            key = (str(item["type"]), str(item["name"]))
-            role_map.setdefault(key, set()).add(str(item["role"]))
-
-        all_keys = sorted(set(override_map.keys()) | set(role_map.keys()))
-        effective: list[dict[str, object]] = []
-        for perm_type, perm_name in all_keys:
-            if (perm_type, perm_name) in override_map:
-                is_active = override_map[(perm_type, perm_name)]
-                source = "user_override"
-            else:
-                is_active = True
-                source = "role"
-            roles = sorted(role_map.get((perm_type, perm_name), set()))
-            effective.append(
-                {
-                    "type": perm_type,
-                    "name": perm_name,
-                    "is_active": is_active,
-                    "source": source,
-                    "roles": roles,
-                }
-            )
-
-        return {
-            "user_overrides": user_overrides,
-            "role_permissions": role_permissions,
-            "effective": effective,
-        }
+    @staticmethod
+    def _normalize_permission_parts(permission_type: str, name: str) -> tuple[str, str]:
+        return normalize_permission_parts(permission_type, name)

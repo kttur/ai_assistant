@@ -25,24 +25,68 @@ Implemented:
 - LLM can call system commands (`media/*`, `mpc/*`, `output/*`) via tool-call format;
 - Ollama system instructions (English) added for Telegram HTML formatting;
 - basic unit tests for Telegram handlers;
-- context documents in the `context/` folder.
+- context documents in the `context/` folder;
+- split bootstrap into focused packages: `bootstrap_llm/` and `bootstrap_infra/`;
+- split Telegram handlers into dedicated files: `handler_methods/`, `handler_helpers/`, `handler_functions/`;
+- Codex-oriented generated docs map and context sync tooling.
 
 ## Structure
 
 ```text
 ai_assistant/
+  docs/
   context/
   src/ai_assistant/
+    bootstrap_infra/
+    bootstrap_llm/
     config/
     core/
+    devtools/
     modules/telegram/
     providers/llm/
     providers/memory/
-  tests/modules/telegram/
+  tests/
   main.py
   pyproject.toml
   .env.example
 ```
+
+## Documentation For Codex
+
+Start files for new chats:
+
+- `docs/CODEX_START.md`
+- `context/CODEX_CONTEXT.md` (auto-generated)
+- `docs/ARCHITECTURE.md`
+- `docs/DEVELOPMENT_GUIDELINES.md`
+- `docs/PROJECT_MAP.md` (auto-generated)
+
+Documentation sync command:
+
+- `python -m ai_assistant.devtools.sync_docs`
+- check-only mode: `python -m ai_assistant.devtools.sync_docs --check`
+
+Installed entry point:
+
+- `ai-assistant-sync-docs`
+
+Optional auto-sync on commit:
+
+- `git config core.hooksPath .githooks`
+
+## Repository Scan Rule
+
+When reading project structure (especially by LLM agents), avoid deep scans of:
+
+- `.venv`
+- `.git`
+- `__pycache__`
+- `.pytest_cache`
+- `.mypy_cache`
+- `.ruff_cache`
+- `.idea`
+
+These directories are intentionally excluded by generated map tooling to reduce noise and cost.
 
 ## Quick Start
 

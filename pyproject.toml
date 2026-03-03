@@ -13,6 +13,9 @@ dependencies = [
   "python-dotenv>=1.0.1,<2",
 ]
 
+[project.scripts]
+ai-assistant-sync-docs = "ai_assistant.devtools.sync_docs:main"
+
 [project.optional-dependencies]
 openai = ["openai>=1.55.0"]
 anthropic = ["anthropic>=0.39.0"]
