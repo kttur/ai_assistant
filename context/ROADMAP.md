@@ -14,7 +14,7 @@
 - [x] Implement Anthropic provider.
 - [x] Implement Ollama provider.
 - [x] Provider switching via config without changing channels/core.
-- [ ] Add robust auto-routing mode (`llm_provider=auto`) with policies/fallbacks.
+- [x] Add robust auto-routing mode (`llm_provider=auto`) with policies/fallbacks.
 
 ## Stage 2 - Memory and History
 

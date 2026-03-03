@@ -104,6 +104,27 @@ def test_from_env_reads_ai_assistant_anthropic_variables(monkeypatch) -> None:
     assert settings.anthropic_available_models == ("claude-x", "claude-y")
 
 
+def test_from_env_reads_auto_router_and_health_settings(monkeypatch) -> None:
+    monkeypatch.setattr("ai_assistant.config.settings.load_dotenv", lambda override=False: None)
+    monkeypatch.setenv("AI_ASSISTANT_AUTO_ROUTER_LOCAL_PROVIDER", "ollama")
+    monkeypatch.setenv("AI_ASSISTANT_AUTO_ROUTER_LOCAL_MODEL", "qwen3:14b")
+    monkeypatch.setenv("AI_ASSISTANT_AUTO_ROUTER_CLOUD_PROVIDER", "openai")
+    monkeypatch.setenv("AI_ASSISTANT_AUTO_ROUTER_CLOUD_MODEL", "gpt-4.1-mini")
+    monkeypatch.setenv("AI_ASSISTANT_AUTO_ROUTER_TIMEOUT_SECONDS", "12.5")
+    monkeypatch.setenv("AI_ASSISTANT_LLM_HEALTH_BASE_COOLDOWN_SECONDS", "45")
+    monkeypatch.setenv("AI_ASSISTANT_LLM_HEALTH_MAX_COOLDOWN_SECONDS", "900")
+
+    settings = Settings.from_env()
+
+    assert settings.auto_router_local_provider == "ollama"
+    assert settings.auto_router_local_model == "qwen3:14b"
+    assert settings.auto_router_cloud_provider == "openai"
+    assert settings.auto_router_cloud_model == "gpt-4.1-mini"
+    assert settings.auto_router_timeout_seconds == 12.5
+    assert settings.llm_health_base_cooldown_seconds == 45
+    assert settings.llm_health_max_cooldown_seconds == 900
+
+
 def test_from_env_keeps_anthropic_legacy_fallback(monkeypatch) -> None:
     monkeypatch.setattr("ai_assistant.config.settings.load_dotenv", lambda override=False: None)
     _clear_anthropic_env(monkeypatch)

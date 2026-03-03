@@ -46,6 +46,8 @@ async def _sync_llm_model_with_provider(
     target_provider = provider_name.strip().lower()
     if not target_provider:
         return
+    if target_provider == "auto":
+        return
 
     sections = await self._get_visible_settings_sections(
         user_id=user_id,

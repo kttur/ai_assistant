@@ -35,6 +35,13 @@ class Settings:
     assistant_channel: str
     llm_provider: str
     llm_available_providers: tuple[str, ...]
+    auto_router_local_provider: str
+    auto_router_local_model: str
+    auto_router_cloud_provider: str
+    auto_router_cloud_model: str
+    auto_router_timeout_seconds: float
+    llm_health_base_cooldown_seconds: int
+    llm_health_max_cooldown_seconds: int
     openai_available_models: tuple[str, ...]
     anthropic_available_models: tuple[str, ...]
     ollama_available_models: tuple[str, ...]
@@ -91,15 +98,57 @@ class Settings:
                 default="claude-3-5-sonnet-latest",
             )
         )
+        ollama_model = getenv("OLLAMA_MODEL", "llama3.1")
         return cls(
             assistant_channel=getenv("ASSISTANT_CHANNEL", "telegram"),
             llm_provider=getenv("LLM_PROVIDER", "mock"),
             llm_available_providers=_parse_csv(
                 getenv("LLM_AVAILABLE_PROVIDERS", "mock,openai,anthropic,ollama")
             ),
+            auto_router_local_provider=_get_first_env(
+                "AI_ASSISTANT_AUTO_ROUTER_LOCAL_PROVIDER",
+                "AUTO_ROUTER_LOCAL_PROVIDER",
+                default="ollama",
+            ),
+            auto_router_local_model=_get_first_env(
+                "AI_ASSISTANT_AUTO_ROUTER_LOCAL_MODEL",
+                "AUTO_ROUTER_LOCAL_MODEL",
+                default=ollama_model,
+            ),
+            auto_router_cloud_provider=_get_first_env(
+                "AI_ASSISTANT_AUTO_ROUTER_CLOUD_PROVIDER",
+                "AUTO_ROUTER_CLOUD_PROVIDER",
+                default="openai",
+            ),
+            auto_router_cloud_model=_get_first_env(
+                "AI_ASSISTANT_AUTO_ROUTER_CLOUD_MODEL",
+                "AUTO_ROUTER_CLOUD_MODEL",
+                default=openai_model,
+            ),
+            auto_router_timeout_seconds=float(
+                _get_first_env(
+                    "AI_ASSISTANT_AUTO_ROUTER_TIMEOUT_SECONDS",
+                    "AUTO_ROUTER_TIMEOUT_SECONDS",
+                    default="20",
+                )
+            ),
+            llm_health_base_cooldown_seconds=int(
+                _get_first_env(
+                    "AI_ASSISTANT_LLM_HEALTH_BASE_COOLDOWN_SECONDS",
+                    "LLM_HEALTH_BASE_COOLDOWN_SECONDS",
+                    default="120",
+                )
+            ),
+            llm_health_max_cooldown_seconds=int(
+                _get_first_env(
+                    "AI_ASSISTANT_LLM_HEALTH_MAX_COOLDOWN_SECONDS",
+                    "LLM_HEALTH_MAX_COOLDOWN_SECONDS",
+                    default="1800",
+                )
+            ),
             openai_available_models=openai_available_models,
             anthropic_available_models=anthropic_available_models,
-            ollama_available_models=_parse_csv(getenv("OLLAMA_AVAILABLE_MODELS", getenv("OLLAMA_MODEL", "llama3.1"))),
+            ollama_available_models=_parse_csv(getenv("OLLAMA_AVAILABLE_MODELS", ollama_model)),
             user_settings_backend=getenv("USER_SETTINGS_BACKEND", "memory"),
             permissions_backend=getenv("PERMISSIONS_BACKEND", "auto"),
             admin_telegram_id=_parse_optional_int(getenv("ADMIN_TELEGRAM_ID", "")),
@@ -138,5 +187,5 @@ class Settings:
             ),
             anthropic_model=anthropic_model,
             ollama_base_url=getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
-            ollama_model=getenv("OLLAMA_MODEL", "llama3.1"),
+            ollama_model=ollama_model,
         )

@@ -104,8 +104,15 @@ These directories are intentionally excluded by generated map tooling to reduce 
 
 - `ASSISTANT_CHANNEL` - current channel (`telegram`).
 - `TELEGRAM_BOT_TOKEN` - Telegram bot token.
-- `LLM_PROVIDER` - model provider (`mock`, `openai`, `anthropic`, `ollama`).
-- `LLM_AVAILABLE_PROVIDERS` - list of providers available in settings (CSV).
+- `LLM_PROVIDER` - model provider (`mock`, `openai`, `anthropic`, `ollama`) or `auto`.
+- `LLM_AVAILABLE_PROVIDERS` - list of providers available in settings (CSV). May include `auto`.
+- `AI_ASSISTANT_AUTO_ROUTER_LOCAL_PROVIDER` - primary router backend provider (default `ollama`).
+- `AI_ASSISTANT_AUTO_ROUTER_LOCAL_MODEL` - primary router model.
+- `AI_ASSISTANT_AUTO_ROUTER_CLOUD_PROVIDER` - fallback router backend provider (default `openai`).
+- `AI_ASSISTANT_AUTO_ROUTER_CLOUD_MODEL` - fallback router model.
+- `AI_ASSISTANT_AUTO_ROUTER_TIMEOUT_SECONDS` - timeout for a single router request.
+- `AI_ASSISTANT_LLM_HEALTH_BASE_COOLDOWN_SECONDS` - initial cooldown for unhealthy model/router targets.
+- `AI_ASSISTANT_LLM_HEALTH_MAX_COOLDOWN_SECONDS` - max cooldown for unhealthy model/router targets.
 - `USER_SETTINGS_BACKEND` - settings backend (`memory`, `postgres`).
 - `PERMISSIONS_BACKEND` - permissions backend (`auto`, `disabled`, `memory`, `postgres`).
 - `ADMIN_TELEGRAM_ID` - Telegram user id with full access (bypasses all permission checks), optional.
@@ -202,6 +209,11 @@ and setting/option names and descriptions come from PostgreSQL i18n tables.
 `/settings` now includes choice settings:
 - `llm_provider` - model backend;
 - `llm_model` - model in `provider:model` format.
+
+`llm_provider=auto` enables policy-based routing:
+- local router model (primary) analyzes request complexity/risk and returns candidate queue;
+- if local router is unavailable, cloud router fallback is used;
+- if selected specialist model is unavailable at runtime, next candidate is used.
 
 The list of available options comes from `.env`:
 - providers: `LLM_AVAILABLE_PROVIDERS`;

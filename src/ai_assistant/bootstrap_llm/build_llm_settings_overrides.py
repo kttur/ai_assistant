@@ -25,8 +25,19 @@ def build_llm_settings_overrides(
         ),
     ]
 
-    options: list[SettingChoiceOption] = []
+    options: list[SettingChoiceOption] = [
+        SettingChoiceOption(
+            setting_id="llm_provider",
+            name="auto",
+            display_name=provider_display_name("auto"),
+            description="Automatic routing by policy.",
+        )
+    ]
     choice_translations_ru: dict[tuple[str, str], dict[str, str]] = {}
+    choice_translations_ru[("llm_provider", "auto")] = {
+        "display_name": "Авто",
+        "description": "Автоматический выбор провайдера и модели по политике.",
+    }
 
     for provider in enabled_providers:
         provider_label = provider_display_name(provider)
@@ -79,7 +90,7 @@ def build_llm_settings_overrides(
             "llm_provider": {
                 "section": "Ассистент",
                 "title": "LLM-провайдер",
-                "description": "Предпочитаемый backend модели для ваших запросов.",
+                "description": "Предпочитаемый backend модели или автоматическая маршрутизация.",
             },
             "llm_model": {
                 "section": "Ассистент",

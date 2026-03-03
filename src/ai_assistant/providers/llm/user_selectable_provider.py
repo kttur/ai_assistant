@@ -2,6 +2,16 @@ from __future__ import annotations
 
 from ai_assistant.core.interfaces import LLMProvider, PermissionChecker, UserSettingsStore
 from ai_assistant.core.models import UserMessage
+from ai_assistant.providers.llm.auto_router import AutoRouterProtocol
+from ai_assistant.providers.llm.auto_router_types import (
+    RouteCandidate,
+    RouteDecision,
+    RouterCatalogEntry,
+)
+from ai_assistant.providers.llm.model_health_registry import ModelHealthRegistry
+
+AUTO_PROVIDER_NAME = "auto"
+_LOCAL_PROVIDER_NAMES = {"ollama", "mock"}
 
 
 class UserSelectableLLMProvider:
@@ -14,6 +24,9 @@ class UserSelectableLLMProvider:
         user_settings_store: UserSettingsStore | None = None,
         permission_checker: PermissionChecker | None = None,
         admin_telegram_id: int | None = None,
+        auto_router: AutoRouterProtocol | None = None,
+        health_registry: ModelHealthRegistry | None = None,
+        default_selection_mode: str = "manual",
     ) -> None:
         normalized_providers = {
             key.strip().lower(): value
@@ -42,23 +55,70 @@ class UserSelectableLLMProvider:
         self._user_settings_store = user_settings_store
         self._permission_checker = permission_checker
         self._admin_telegram_id = admin_telegram_id
+        self._auto_router = auto_router
+        self._health_registry = health_registry
+        self._default_selection_mode = (
+            "auto" if default_selection_mode.strip().lower() == "auto" else "manual"
+        )
 
     async def generate_reply(self, message: UserMessage) -> str:
-        provider_name, model = await self._resolve_provider_and_model(user_id=message.user_id)
-        provider = self._providers.get(provider_name)
-        if provider is None:
+        selected_provider, candidate_model = await self._read_user_preferences(user_id=message.user_id)
+        allowed_providers = await self._get_allowed_providers(user_id=message.user_id)
+        if not allowed_providers:
+            raise RuntimeError("No permitted LLM providers configured for this user.")
+
+        if self._is_auto_mode_requested(selected_provider) and self._auto_router is not None:
+            auto_reply = await self._try_auto_route(
+                user_id=message.user_id,
+                message=message,
+                candidate_model=candidate_model,
+                allowed_providers=allowed_providers,
+            )
+            if auto_reply is not None:
+                return auto_reply
+
+        effective_provider = selected_provider
+        if effective_provider == AUTO_PROVIDER_NAME:
+            effective_provider = None
+        provider_name, model = await self._resolve_provider_and_model_from_preferences(
+            user_id=message.user_id,
+            selected_provider=effective_provider,
+            candidate_model=candidate_model,
+            allowed_providers=allowed_providers,
+        )
+        reply = await self._generate_reply_with_provider(
+            provider_name=provider_name,
+            model=model,
+            message=message,
+            suppress_errors=False,
+        )
+        if reply is None:
             raise RuntimeError("No permitted LLM provider is available.")
-
-        if hasattr(provider, "generate_reply_for_model"):
-            return await provider.generate_reply_for_model(message=message, model=model)  # type: ignore[attr-defined]
-
-        return await provider.generate_reply(message)
+        return reply
 
     async def _resolve_provider_and_model(self, user_id: int) -> tuple[str, str | None]:
         selected_provider, candidate_model = await self._read_user_preferences(user_id=user_id)
         allowed_providers = await self._get_allowed_providers(user_id=user_id)
         if not allowed_providers:
             raise RuntimeError("No permitted LLM providers configured for this user.")
+        if selected_provider == AUTO_PROVIDER_NAME:
+            selected_provider = None
+        return await self._resolve_provider_and_model_from_preferences(
+            user_id=user_id,
+            selected_provider=selected_provider,
+            candidate_model=candidate_model,
+            allowed_providers=allowed_providers,
+        )
+
+    async def _resolve_provider_and_model_from_preferences(
+        self,
+        user_id: int,
+        selected_provider: str | None,
+        candidate_model: str | None,
+        allowed_providers: list[str],
+    ) -> tuple[str, str | None]:
+        if selected_provider == AUTO_PROVIDER_NAME:
+            selected_provider = None
 
         # If user explicitly selected provider:model, do not silently fall back to another provider.
         if selected_provider and candidate_model:
@@ -99,6 +159,163 @@ class UserSelectableLLMProvider:
 
         raise RuntimeError("No permitted LLM models configured for this user.")
 
+    async def _try_auto_route(
+        self,
+        *,
+        user_id: int,
+        message: UserMessage,
+        candidate_model: str | None,
+        allowed_providers: list[str],
+    ) -> str | None:
+        if self._auto_router is None:
+            return None
+
+        catalog = await self._build_router_catalog(user_id=user_id, allowed_providers=allowed_providers)
+        if not catalog:
+            return None
+
+        try:
+            decision = await self._auto_router.route(
+                message=message,
+                candidate_catalog=catalog,
+            )
+        except Exception:
+            return None
+
+        queue = self._build_auto_candidate_queue(
+            decision=decision,
+            catalog=catalog,
+            candidate_model=candidate_model,
+        )
+        for item in queue:
+            provider = item.provider
+            if provider not in allowed_providers:
+                continue
+            resolved_model = await self._resolve_model_for_provider(
+                user_id=user_id,
+                provider=provider,
+                candidate_model=item.model,
+                strict_candidate=True,
+            )
+            if resolved_model is None and self._provider_requires_model(provider):
+                continue
+            reply = await self._generate_reply_with_provider(
+                provider_name=provider,
+                model=resolved_model,
+                message=message,
+                suppress_errors=True,
+            )
+            if reply is not None:
+                return reply
+        return None
+
+    async def _build_router_catalog(
+        self,
+        *,
+        user_id: int,
+        allowed_providers: list[str],
+    ) -> tuple[RouterCatalogEntry, ...]:
+        entries: list[RouterCatalogEntry] = []
+        seen: set[tuple[str, str]] = set()
+        for provider in allowed_providers:
+            models = await self._get_allowed_models_for_provider(user_id=user_id, provider=provider)
+            for model in models:
+                key = (provider, model)
+                if key in seen:
+                    continue
+                seen.add(key)
+                entries.append(
+                    RouterCatalogEntry(
+                        provider=provider,
+                        model=model,
+                        platform=self._provider_platform(provider),
+                        cost_tier=self._model_cost_tier(provider=provider, model=model),
+                        notes=self._catalog_notes(provider=provider),
+                    )
+                )
+        return tuple(entries)
+
+    async def _get_allowed_models_for_provider(self, *, user_id: int, provider: str) -> tuple[str, ...]:
+        if not self._provider_requires_model(provider):
+            placeholder = self._default_models.get(provider, "default")
+            return (placeholder,)
+
+        available = self._available_models.get(provider, ())
+        default_model = self._default_models.get(provider)
+        candidates: list[str] = []
+        if default_model:
+            candidates.append(default_model)
+        candidates.extend(available)
+
+        seen: set[str] = set()
+        allowed_models: list[str] = []
+        for model in candidates:
+            normalized_model = model.strip()
+            if not normalized_model or normalized_model in seen:
+                continue
+            seen.add(normalized_model)
+            permission_name = self._model_permission_name(provider=provider, model=normalized_model)
+            if await self._has_assistant_permission(user_id=user_id, permission_name=permission_name):
+                allowed_models.append(normalized_model)
+        return tuple(allowed_models)
+
+    def _build_auto_candidate_queue(
+        self,
+        *,
+        decision: RouteDecision,
+        catalog: tuple[RouterCatalogEntry, ...],
+        candidate_model: str | None,
+    ) -> tuple[RouteCandidate, ...]:
+        queue: list[RouteCandidate] = []
+        seen: set[tuple[str, str]] = set()
+        catalog_keys = {
+            (item.provider.strip().lower(), item.model.strip()): item for item in catalog
+        }
+        for item in decision.candidates:
+            normalized_provider = item.provider.strip().lower()
+            normalized_model = item.model.strip()
+            key = (normalized_provider, normalized_model)
+            if key in seen or key not in catalog_keys:
+                continue
+            seen.add(key)
+            queue.append(
+                RouteCandidate(
+                    provider=normalized_provider,
+                    model=normalized_model,
+                    tier=item.tier,
+                    reason=item.reason,
+                )
+            )
+
+        explicit_provider, explicit_model = self._parse_model_value(candidate_model)
+        if explicit_provider and explicit_model:
+            key = (explicit_provider, explicit_model)
+            if key in catalog_keys and key not in seen:
+                seen.add(key)
+                queue.append(
+                    RouteCandidate(
+                        provider=explicit_provider,
+                        model=explicit_model,
+                        tier="user_fallback",
+                        reason="user_selected_model",
+                    )
+                )
+
+        for item in catalog:
+            key = (item.provider.strip().lower(), item.model.strip())
+            if key in seen:
+                continue
+            seen.add(key)
+            queue.append(
+                RouteCandidate(
+                    provider=item.provider.strip().lower(),
+                    model=item.model.strip(),
+                    tier=item.cost_tier,
+                    reason="catalog_fallback",
+                )
+            )
+        return tuple(queue)
+
     async def _read_user_preferences(self, user_id: int) -> tuple[str | None, str | None]:
         selected_provider: str | None = None
         selected_model: str | None = None
@@ -137,6 +354,7 @@ class UserSelectableLLMProvider:
         user_id: int,
         provider: str,
         candidate_model: str | None,
+        strict_candidate: bool = False,
     ) -> str | None:
         if not self._provider_requires_model(provider):
             return None
@@ -147,9 +365,10 @@ class UserSelectableLLMProvider:
         candidates: list[str] = []
         if candidate_model:
             candidates.append(candidate_model)
-        if default_model:
+        if not strict_candidate and default_model:
             candidates.append(default_model)
-        candidates.extend(available)
+        if not strict_candidate:
+            candidates.extend(available)
 
         seen: set[str] = set()
         ordered_candidates: list[str] = []
@@ -168,6 +387,78 @@ class UserSelectableLLMProvider:
                 return model
 
         return None
+
+    async def _generate_reply_with_provider(
+        self,
+        *,
+        provider_name: str,
+        model: str | None,
+        message: UserMessage,
+        suppress_errors: bool,
+    ) -> str | None:
+        provider = self._providers.get(provider_name)
+        if provider is None:
+            if suppress_errors:
+                return None
+            raise RuntimeError("No permitted LLM provider is available.")
+
+        target_key = ModelHealthRegistry.build_target_key(provider=provider_name, model=model, scope="llm")
+        if suppress_errors and self._health_registry is not None:
+            if not self._health_registry.is_available(target_key):
+                return None
+
+        try:
+            if hasattr(provider, "generate_reply_for_model"):
+                reply = await provider.generate_reply_for_model(message=message, model=model)  # type: ignore[attr-defined]
+            else:
+                reply = await provider.generate_reply(message)
+        except Exception:
+            if self._health_registry is not None:
+                self._health_registry.record_failure(target_key)
+            if suppress_errors:
+                return None
+            raise
+
+        if self._health_registry is not None:
+            self._health_registry.record_success(target_key)
+        return reply
+
+    def _is_auto_mode_requested(self, selected_provider: str | None) -> bool:
+        if selected_provider == AUTO_PROVIDER_NAME:
+            return True
+        if selected_provider is None and self._default_selection_mode == "auto":
+            return True
+        return False
+
+    @staticmethod
+    def _provider_platform(provider: str) -> str:
+        if provider in _LOCAL_PROVIDER_NAMES:
+            return "local"
+        return "cloud"
+
+    @staticmethod
+    def _catalog_notes(provider: str) -> str:
+        if provider == "ollama":
+            return "local privacy-first runtime"
+        if provider == "mock":
+            return "testing backend"
+        if provider in {"openai", "anthropic"}:
+            return "cloud high-quality runtime"
+        return "generic backend"
+
+    @staticmethod
+    def _model_cost_tier(provider: str, model: str) -> str:
+        normalized = model.strip().lower()
+        if provider in _LOCAL_PROVIDER_NAMES:
+            if any(token in normalized for token in ("70b", "32b", "34b", "large")):
+                return "balanced_local"
+            return "cheap_local"
+
+        if any(token in normalized for token in ("nano", "mini", "haiku", "small")):
+            return "cheap_cloud"
+        if any(token in normalized for token in ("opus", "gpt-5", "pro", "max")):
+            return "premium_cloud"
+        return "balanced_cloud"
 
     def _provider_requires_model(self, provider: str) -> bool:
         if self._default_models.get(provider):

@@ -74,6 +74,7 @@ def _add_llm_settings_for_provider_model_tests(settings_store: FakeUserSettingsS
         )
     )
     settings_store._choice_options["llm_provider"] = [
+        SettingChoiceOption(setting_id="llm_provider", name="auto", description="Auto"),
         SettingChoiceOption(setting_id="llm_provider", name="openai", description="OpenAI"),
         SettingChoiceOption(setting_id="llm_provider", name="ollama", description="Ollama"),
     ]
@@ -106,6 +107,7 @@ def _add_llm_settings_with_plain_model_names(settings_store: FakeUserSettingsSto
         )
     )
     settings_store._choice_options["llm_provider"] = [
+        SettingChoiceOption(setting_id="llm_provider", name="auto", description="Auto"),
         SettingChoiceOption(setting_id="llm_provider", name="openai", description="OpenAI"),
         SettingChoiceOption(setting_id="llm_provider", name="ollama", description="Ollama"),
     ]
@@ -168,6 +170,32 @@ def test_llm_model_options_with_plain_names_are_not_hidden() -> None:
     assert option_names == ["gpt-5-mini", "gpt-5-nano"]
 
 
+def test_llm_model_options_are_not_filtered_for_auto_provider() -> None:
+    assistant = FakeAssistantService()
+    settings_store = FakeUserSettingsStore()
+    _add_llm_settings_for_provider_model_tests(settings_store)
+    asyncio.run(settings_store.set_setting(user_id=505, key="llm_provider", value="auto"))
+    asyncio.run(settings_store.set_setting(user_id=505, key="llm_model", value="ollama:qwen3:8b"))
+    handlers = TelegramHandlers(assistant_service=assistant, user_settings_store=settings_store)
+
+    sections = asyncio.run(
+        handlers._get_visible_settings_sections(
+            user_id=505,
+            ui_only=True,
+            locale="ru",
+        )
+    )
+    llm_model_setting = next(
+        setting
+        for _, settings_list in sections
+        for setting in settings_list
+        if setting.key == "llm_model"
+    )
+    option_names = [item.name for item in llm_model_setting.options]
+
+    assert option_names == ["openai:gpt-5-mini", "openai:gpt-5-nano", "ollama:qwen3:8b"]
+
+
 def test_switching_llm_provider_updates_llm_model_to_same_provider() -> None:
     assistant = FakeAssistantService()
     settings_store = FakeUserSettingsStore()
@@ -217,6 +245,58 @@ def test_switching_llm_provider_updates_llm_model_to_same_provider() -> None:
     assert chosen is not None
     assert chosen.name == "openai"
     assert asyncio.run(settings_store.get_setting(user_id=505, key="llm_provider")) == "openai"
+    assert asyncio.run(settings_store.get_setting(user_id=505, key="llm_model")) == "openai:gpt-5-mini"
+
+
+def test_switching_llm_provider_to_auto_keeps_current_model() -> None:
+    assistant = FakeAssistantService()
+    settings_store = FakeUserSettingsStore()
+    _add_llm_settings_for_provider_model_tests(settings_store)
+    asyncio.run(settings_store.set_setting(user_id=505, key="llm_provider", value="openai"))
+    asyncio.run(settings_store.set_setting(user_id=505, key="llm_model", value="openai:gpt-5-mini"))
+    handlers = TelegramHandlers(assistant_service=assistant, user_settings_store=settings_store)
+
+    sections = asyncio.run(
+        handlers._get_visible_settings_sections(
+            user_id=505,
+            ui_only=True,
+            locale="ru",
+        )
+    )
+    target_section_index = -1
+    target_setting_index = -1
+    target_option_index = -1
+    for section_index, (_, settings_list) in enumerate(sections):
+        for setting_index, setting in enumerate(settings_list):
+            if setting.key != "llm_provider":
+                continue
+            target_section_index = section_index
+            target_setting_index = setting_index
+            for option_index, option in enumerate(setting.options):
+                if option.name == "auto":
+                    target_option_index = option_index
+                    break
+            break
+        if target_section_index >= 0:
+            break
+
+    assert target_section_index >= 0
+    assert target_setting_index >= 0
+    assert target_option_index >= 0
+
+    chosen = asyncio.run(
+        handlers._set_choice_setting_value(
+            user_id=505,
+            section_index=target_section_index,
+            setting_index=target_setting_index,
+            option_index=target_option_index,
+            locale="ru",
+        )
+    )
+
+    assert chosen is not None
+    assert chosen.name == "auto"
+    assert asyncio.run(settings_store.get_setting(user_id=505, key="llm_provider")) == "auto"
     assert asyncio.run(settings_store.get_setting(user_id=505, key="llm_model")) == "openai:gpt-5-mini"
 
 

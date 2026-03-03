@@ -41,6 +41,8 @@ def _resolve_active_llm_provider(
     llm_model_value: str | None,
 ) -> str | None:
     selected_provider = values_map.get("llm_provider", "").strip().lower()
+    if selected_provider == "auto":
+        return None
     if selected_provider:
         return selected_provider
     return extract_model_provider(llm_model_value)

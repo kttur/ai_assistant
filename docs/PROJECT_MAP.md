@@ -31,6 +31,7 @@ ai_assistant
 │   └── build_user_settings_store.py
 ├── bootstrap_llm
 │   ├── __init__.py
+│   ├── build_auto_router.py
 │   ├── build_available_provider_names.py
 │   ├── build_llm_provider.py
 │   ├── build_llm_provider_instances.py
@@ -150,7 +151,11 @@ ai_assistant
 │   ├── llm
 │   │   ├── __init__.py
 │   │   ├── anthropic_provider.py
+│   │   ├── auto_router.py
+│   │   ├── auto_router_policy.py
+│   │   ├── auto_router_types.py
 │   │   ├── mock_provider.py
+│   │   ├── model_health_registry.py
 │   │   ├── ollama_provider.py
 │   │   ├── openai_provider.py
 │   │   └── user_selectable_provider.py
@@ -198,6 +203,9 @@ ai_assistant
 
 ```text
 tests
+├── bootstrap_llm
+│   ├── test_build_available_provider_names.py
+│   └── test_build_llm_settings_overrides.py
 ├── config
 │   └── test_settings.py
 ├── core
@@ -215,6 +223,9 @@ tests
 └── providers
     ├── llm
     │   ├── test_anthropic_provider.py
+    │   ├── test_auto_router.py
+    │   ├── test_auto_router_types.py
+    │   ├── test_model_health_registry.py
     │   ├── test_ollama_provider.py
     │   └── test_user_selectable_provider.py
     ├── permissions
@@ -253,6 +264,7 @@ context
 
 ## Largest Python Files in `src`
 
+- `src\ai_assistant\providers\llm\user_selectable_provider.py`: 514 lines
 - `src\ai_assistant\modules\telegram\handler_methods\handle_settings_callback.py`: 308 lines
 - `src\ai_assistant\core\service.py`: 285 lines
 - `src\ai_assistant\providers\system\voicemeeter_output_controller.py`: 263 lines
@@ -260,27 +272,26 @@ context
 - `src\ai_assistant\providers\permissions\postgres_permission_checker.py`: 253 lines
 - `src\ai_assistant\providers\settings\in_memory_user_settings_store.py`: 232 lines
 - `src\ai_assistant\devtools\sync_docs.py`: 223 lines
-- `src\ai_assistant\providers\llm\user_selectable_provider.py`: 223 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_interactive.py`: 222 lines
 - `src\ai_assistant\providers\permissions\in_memory_permission_checker.py`: 202 lines
+- `src\ai_assistant\providers\llm\auto_router.py`: 194 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_executor.py`: 194 lines
 - `src\ai_assistant\modules\telegram\handlers.py`: 194 lines
 - `src\ai_assistant\providers\system\assistant_command_executor.py`: 192 lines
-- `src\ai_assistant\core\interfaces.py`: 189 lines
-- `src\ai_assistant\providers\settings\postgres_user_settings_store.py`: 188 lines
+- `src\ai_assistant\config\settings.py`: 191 lines
 
 ## Largest Python Files in `tests`
 
-- `tests\modules\telegram\test_handlers_settings.py`: 439 lines
+- `tests\modules\telegram\test_handlers_settings.py`: 519 lines
+- `tests\providers\llm\test_user_selectable_provider.py`: 439 lines
 - `tests\modules\telegram\_shared.py`: 341 lines
 - `tests\modules\telegram\test_handlers_basic.py`: 307 lines
-- `tests\providers\llm\test_user_selectable_provider.py`: 254 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\core\test_assistant_service.py`: 217 lines
+- `tests\providers\llm\test_auto_router.py`: 157 lines
+- `tests\config\test_settings.py`: 141 lines
 - `tests\modules\telegram\test_handlers_media.py`: 136 lines
-- `tests\config\test_settings.py`: 120 lines
 - `tests\providers\llm\test_anthropic_provider.py`: 105 lines
-- `tests\providers\settings\test_in_memory_user_settings_store.py`: 97 lines
 
 ## Notes for LLM Agents
 
