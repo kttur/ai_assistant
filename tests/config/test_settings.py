@@ -25,6 +25,15 @@ ANTHROPIC_ENV_KEYS = (
     "ANTHROPIC_AVAILABLE_MODELS",
 )
 
+OLLAMA_ENV_KEYS = (
+    "AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME",
+    "AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE",
+    "AI_ASSISTANT_OLLAMA_EXTRA_HEADERS_JSON",
+    "OLLAMA_AUTH_HEADER_NAME",
+    "OLLAMA_AUTH_HEADER_VALUE",
+    "OLLAMA_EXTRA_HEADERS_JSON",
+)
+
 
 def _clear_openai_env(monkeypatch) -> None:
     for key in OPENAI_ENV_KEYS:
@@ -33,6 +42,11 @@ def _clear_openai_env(monkeypatch) -> None:
 
 def _clear_anthropic_env(monkeypatch) -> None:
     for key in ANTHROPIC_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
+
+
+def _clear_ollama_env(monkeypatch) -> None:
+    for key in OLLAMA_ENV_KEYS:
         monkeypatch.delenv(key, raising=False)
 
 
@@ -123,6 +137,25 @@ def test_from_env_reads_auto_router_and_health_settings(monkeypatch) -> None:
     assert settings.auto_router_timeout_seconds == 12.5
     assert settings.llm_health_base_cooldown_seconds == 45
     assert settings.llm_health_max_cooldown_seconds == 900
+
+
+def test_from_env_reads_ollama_auth_header_settings(monkeypatch) -> None:
+    monkeypatch.setattr("ai_assistant.config.settings.load_dotenv", lambda override=False: None)
+    _clear_ollama_env(monkeypatch)
+    monkeypatch.setenv("AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME", "Authorization")
+    monkeypatch.setenv("AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE", "Bearer abc")
+    monkeypatch.setenv(
+        "AI_ASSISTANT_OLLAMA_EXTRA_HEADERS_JSON",
+        '{"CF-Access-Client-Id":"id","CF-Access-Client-Secret":"secret"}',
+    )
+
+    settings = Settings.from_env()
+
+    assert settings.ollama_auth_header_name == "Authorization"
+    assert settings.ollama_auth_header_value == "Bearer abc"
+    assert settings.ollama_extra_headers_json == (
+        '{"CF-Access-Client-Id":"id","CF-Access-Client-Secret":"secret"}'
+    )
 
 
 def test_from_env_keeps_anthropic_legacy_fallback(monkeypatch) -> None:

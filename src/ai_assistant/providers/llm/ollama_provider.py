@@ -17,6 +17,7 @@ Formatting requirements:
 - Do not include unsupported tags or raw HTML comments/scripts.
 - Exception: if prompt explicitly requests tool calls, output exact <tool_call>{...}</tool_call>.
 """
+DEFAULT_USER_AGENT = "python-requests/2.32.3"
 
 
 class OllamaProvider:
@@ -26,12 +27,32 @@ class OllamaProvider:
         model: str,
         timeout_seconds: float = 120.0,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        auth_header_name: str = "",
+        auth_header_value: str = "",
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._model = model
         self._timeout_seconds = timeout_seconds
         self._system_prompt = system_prompt
-        self._generate_url = f"{self._base_url}/api/generate"
+        self._generate_urls = (
+            f"{self._base_url}/api/generate",
+            f"{self._base_url}/api/generate/",
+        )
+        self._request_headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": DEFAULT_USER_AGENT,
+        }
+        for raw_name, raw_value in (extra_headers or {}).items():
+            header_name = raw_name.strip().rstrip(":")
+            header_value = raw_value.strip()
+            if header_name and header_value:
+                self._request_headers[header_name] = header_value
+        header_name = auth_header_name.strip().rstrip(":")
+        header_value = auth_header_value.strip()
+        if header_name and header_value:
+            self._request_headers[header_name] = header_value
 
     async def generate_reply(self, message: UserMessage) -> str:
         return await self.generate_reply_for_model(message=message, model=None)
@@ -54,25 +75,32 @@ class OllamaProvider:
 
     def _generate_sync(self, payload: dict[str, object]) -> str:
         data = json.dumps(payload).encode("utf-8")
-        req = request.Request(
-            self._generate_url,
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with request.urlopen(req, timeout=self._timeout_seconds) as response:
-                body = response.read().decode("utf-8")
-        except error.HTTPError as exc:
-            error_body = ""
+        body = ""
+        for index, target_url in enumerate(self._generate_urls):
+            req = request.Request(
+                target_url,
+                data=data,
+                headers=self._request_headers,
+                method="POST",
+            )
             try:
-                error_body = exc.read().decode("utf-8", errors="replace")
-            except Exception:
-                pass
-            detail = f" Ollama response: {error_body[:300]}" if error_body else ""
-            raise RuntimeError(f"Ollama HTTP error {exc.code}.{detail}") from exc
-        except error.URLError as exc:
-            raise RuntimeError(f"Ollama is unreachable: {exc.reason}") from exc
+                with request.urlopen(req, timeout=self._timeout_seconds) as response:
+                    body = response.read().decode("utf-8")
+                break
+            except error.HTTPError as exc:
+                is_last_attempt = index == len(self._generate_urls) - 1
+                should_retry_alt_path = exc.code in {403, 404} and not is_last_attempt
+                if should_retry_alt_path:
+                    continue
+                error_body = ""
+                try:
+                    error_body = exc.read().decode("utf-8", errors="replace")
+                except Exception:
+                    pass
+                detail = f" Ollama response: {error_body[:300]}" if error_body else ""
+                raise RuntimeError(f"Ollama HTTP error {exc.code}.{detail}") from exc
+            except error.URLError as exc:
+                raise RuntimeError(f"Ollama is unreachable: {exc.reason}") from exc
 
         try:
             parsed = json.loads(body)

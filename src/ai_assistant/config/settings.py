@@ -66,6 +66,9 @@ class Settings:
     anthropic_model: str
     ollama_base_url: str
     ollama_model: str
+    ollama_auth_header_name: str
+    ollama_auth_header_value: str
+    ollama_extra_headers_json: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -188,4 +191,19 @@ class Settings:
             anthropic_model=anthropic_model,
             ollama_base_url=getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             ollama_model=ollama_model,
+            ollama_auth_header_name=_get_first_env(
+                "AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME",
+                "OLLAMA_AUTH_HEADER_NAME",
+                default="",
+            ),
+            ollama_auth_header_value=_get_first_env(
+                "AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE",
+                "OLLAMA_AUTH_HEADER_VALUE",
+                default="",
+            ),
+            ollama_extra_headers_json=_get_first_env(
+                "AI_ASSISTANT_OLLAMA_EXTRA_HEADERS_JSON",
+                "OLLAMA_EXTRA_HEADERS_JSON",
+                default="",
+            ),
         )

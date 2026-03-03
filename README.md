@@ -156,6 +156,9 @@ For compose mode, app container overrides:
 - `AI_ASSISTANT_ANTHROPIC_MODEL` - default Anthropic model.
 - `AI_ASSISTANT_ANTHROPIC_AVAILABLE_MODELS` - list of Anthropic models available in settings (CSV).
 - `OLLAMA_AVAILABLE_MODELS` - list of Ollama models available in settings (CSV).
+- `AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME` - optional HTTP header name for Ollama authentication (for example, `Authorization`).
+- `AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE` - optional HTTP header value for Ollama authentication (for example, `Bearer <token>`).
+- `AI_ASSISTANT_OLLAMA_EXTRA_HEADERS_JSON` - optional JSON object with additional Ollama request headers (for example, `{"CF-Access-Client-Id":"...","CF-Access-Client-Secret":"..."}`).
 
 For backward compatibility, legacy names `OPENAI_*` and `ANTHROPIC_*` are still supported.
 
@@ -168,6 +171,11 @@ To run with a local model:
    - `LLM_PROVIDER=ollama`
    - `OLLAMA_BASE_URL=http://localhost:11434`
    - `OLLAMA_MODEL=llama3.1` (or another installed model)
+   - optional auth header:
+     - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME=Authorization`
+     - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE=Bearer <token>`
+   - optional multiple headers via JSON:
+     - `AI_ASSISTANT_OLLAMA_EXTRA_HEADERS_JSON={"CF-Access-Client-Id":"...","CF-Access-Client-Secret":"..."}`
 3. Verify that the model is installed (`ollama list`).
 4. Start the bot and use `/ask`.
 

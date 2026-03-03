@@ -273,12 +273,12 @@ context
 - `src\ai_assistant\providers\settings\in_memory_user_settings_store.py`: 232 lines
 - `src\ai_assistant\devtools\sync_docs.py`: 223 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_interactive.py`: 222 lines
+- `src\ai_assistant\config\settings.py`: 209 lines
 - `src\ai_assistant\providers\permissions\in_memory_permission_checker.py`: 202 lines
 - `src\ai_assistant\providers\llm\auto_router.py`: 194 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_executor.py`: 194 lines
 - `src\ai_assistant\modules\telegram\handlers.py`: 194 lines
 - `src\ai_assistant\providers\system\assistant_command_executor.py`: 192 lines
-- `src\ai_assistant\config\settings.py`: 191 lines
 
 ## Largest Python Files in `tests`
 
@@ -288,10 +288,10 @@ context
 - `tests\modules\telegram\test_handlers_basic.py`: 307 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\core\test_assistant_service.py`: 217 lines
+- `tests\providers\llm\test_ollama_provider.py`: 184 lines
+- `tests\config\test_settings.py`: 174 lines
 - `tests\providers\llm\test_auto_router.py`: 157 lines
-- `tests\config\test_settings.py`: 141 lines
 - `tests\modules\telegram\test_handlers_media.py`: 136 lines
-- `tests\providers\llm\test_anthropic_provider.py`: 105 lines
 
 ## Notes for LLM Agents
 
