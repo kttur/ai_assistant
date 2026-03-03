@@ -33,24 +33,38 @@ from ai_assistant.modules.telegram.handler_functions import (
     render_contact_section,
     render_forward_origin_section,
     render_user_section,
+    split_telegram_text_chunks,
 )
 
 logger = logging.getLogger(__name__)
+TELEGRAM_TEXT_LIMIT = 4096
 
 
 async def _send_llm_reply(self, update: Update, text: str) -> None:
     if not update.effective_message:
         return
-    try:
-        logger.debug("Sending Telegram reply with HTML parse mode: chars=%d", len(text))
-        await update.effective_message.reply_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            disable_web_page_preview=True,
-        )
-    except BadRequest:
-        # Fallback to plain text if model produced invalid Telegram HTML.
-        logger.warning("Telegram HTML parse failed, retrying plain text response.")
-        await update.effective_message.reply_text(text)
+    chunks = split_telegram_text_chunks(text, max_chars=TELEGRAM_TEXT_LIMIT)
+    logger.debug(
+        "Sending Telegram reply: chars=%d chunks=%d limit=%d",
+        len(text),
+        len(chunks),
+        TELEGRAM_TEXT_LIMIT,
+    )
+
+    for index, chunk in enumerate(chunks, start=1):
+        try:
+            await update.effective_message.reply_text(
+                chunk,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        except BadRequest:
+            # Fallback to plain text if this chunk contains invalid Telegram HTML.
+            logger.warning(
+                "Telegram HTML parse failed for chunk %d/%d, retrying plain text.",
+                index,
+                len(chunks),
+            )
+            await update.effective_message.reply_text(chunk)
 
 

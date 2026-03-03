@@ -201,6 +201,33 @@ def test_handle_text_message_calls_llm() -> None:
     assert update.effective_message.reply_kwargs[0].get("parse_mode") == "HTML"
 
 
+def test_handle_text_message_splits_long_llm_reply_into_chunks() -> None:
+    long_reply = "x" * 9000
+
+    class LongReplyAssistant(FakeAssistantService):
+        async def process_text(self, user_id: int, text: str):
+            self.process_calls.append((user_id, text))
+            return SimpleNamespace(user_id=user_id, text=long_reply)
+
+    assistant = LongReplyAssistant()
+    handlers = TelegramHandlers(assistant_service=assistant)
+    update = FakeUpdate(user_id=101, text="long please")
+    context = SimpleNamespace(args=[])
+
+    asyncio.run(handlers.handle_text_message(update, context))
+
+    assert assistant.process_calls == [(101, "long please")]
+    assert len(update.effective_message.replies) == 3
+    assert "".join(update.effective_message.replies) == long_reply
+    assert all(
+        kwargs.get("parse_mode") == "HTML" for kwargs in update.effective_message.reply_kwargs
+    )
+    assert all(
+        kwargs.get("disable_web_page_preview") is True
+        for kwargs in update.effective_message.reply_kwargs
+    )
+
+
 def test_terminal_mode_routes_text_to_terminal() -> None:
     assistant = FakeAssistantService()
     terminal = FakeTerminalExecutor(shell_name="powershell")

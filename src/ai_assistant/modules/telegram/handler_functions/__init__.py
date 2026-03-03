@@ -23,6 +23,9 @@ from ai_assistant.modules.telegram.handler_functions.render_forward_origin_secti
     render_forward_origin_section,
 )
 from ai_assistant.modules.telegram.handler_functions.render_user_section import render_user_section
+from ai_assistant.modules.telegram.handler_functions.split_telegram_text_chunks import (
+    split_telegram_text_chunks,
+)
 
 __all__ = [
     "bool_to_storage_value",
@@ -38,4 +41,5 @@ __all__ = [
     "render_contact_section",
     "render_forward_origin_section",
     "render_user_section",
+    "split_telegram_text_chunks",
 ]

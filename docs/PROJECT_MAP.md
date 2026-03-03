@@ -69,7 +69,8 @@ ai_assistant
 │   │   │   ├── option_display_name.py
 │   │   │   ├── render_contact_section.py
 │   │   │   ├── render_forward_origin_section.py
-│   │   │   └── render_user_section.py
+│   │   │   ├── render_user_section.py
+│   │   │   └── split_telegram_text_chunks.py
 │   │   ├── handler_helpers
 │   │   │   ├── __init__.py
 │   │   │   ├── _answer_callback.py
@@ -288,7 +289,7 @@ context
 - `tests\providers\llm\test_user_selectable_provider.py`: 670 lines
 - `tests\modules\telegram\test_handlers_settings.py`: 519 lines
 - `tests\modules\telegram\_shared.py`: 341 lines
-- `tests\modules\telegram\test_handlers_basic.py`: 307 lines
+- `tests\modules\telegram\test_handlers_basic.py`: 334 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\core\test_assistant_service.py`: 217 lines
 - `tests\providers\llm\test_ollama_provider.py`: 184 lines
