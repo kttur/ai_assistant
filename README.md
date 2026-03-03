@@ -100,6 +100,28 @@ These directories are intentionally excluded by generated map tooling to reduce 
    - `python main.py`
    - or `python -m ai_assistant`
 
+## Docker Compose (App + Postgres)
+
+1. Copy `.env.example` to `.env` and set `TELEGRAM_BOT_TOKEN`.
+2. Start containers:
+   - `docker compose up --build -d`
+3. Watch app logs:
+   - `docker compose logs -f app`
+4. Stop containers:
+   - `docker compose down`
+5. Stop containers and remove database volume:
+   - `docker compose down -v`
+
+The compose stack runs:
+- `app` service (assistant bot);
+- `postgres` service;
+- persistent volume `ai_assistant_postgres_data` for PostgreSQL data.
+
+For compose mode, app container overrides:
+- `USER_SETTINGS_BACKEND=postgres`;
+- `PERMISSIONS_BACKEND=postgres`;
+- `POSTGRES_DSN=postgresql://<user>:<password>@postgres:5432/<db>`.
+
 ## Key Environment Variables
 
 - `ASSISTANT_CHANNEL` - current channel (`telegram`).
