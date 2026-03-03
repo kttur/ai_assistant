@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from ai_assistant.core.interfaces import LLMProvider, PermissionChecker, UserSettingsStore
 from ai_assistant.core.models import UserMessage
+from ai_assistant.providers.llm.arbiter import (
+    build_arbiter_prompt,
+    build_regeneration_prompt,
+    parse_arbiter_decision,
+)
 from ai_assistant.providers.llm.auto_router import AutoRouterProtocol
 from ai_assistant.providers.llm.auto_router_types import (
     RouteCandidate,
@@ -12,6 +17,20 @@ from ai_assistant.providers.llm.model_health_registry import ModelHealthRegistry
 
 AUTO_PROVIDER_NAME = "auto"
 _LOCAL_PROVIDER_NAMES = {"ollama", "mock"}
+LOW_CONFIDENCE_POLICY_SETTING_KEY = "llm_auto_low_confidence_policy"
+LOW_CONFIDENCE_POLICY_KEEP_CURRENT = "keep_current"
+LOW_CONFIDENCE_POLICY_UPGRADE_TIER = "upgrade_tier"
+_LOW_CONFIDENCE_POLICIES = {
+    LOW_CONFIDENCE_POLICY_KEEP_CURRENT,
+    LOW_CONFIDENCE_POLICY_UPGRADE_TIER,
+}
+_AUTO_TIER_PRIORITY = {
+    "cheap_local": 0,
+    "balanced_local": 1,
+    "cheap_cloud": 2,
+    "balanced_cloud": 3,
+    "premium_cloud": 4,
+}
 
 
 class UserSelectableLLMProvider:
@@ -26,6 +45,8 @@ class UserSelectableLLMProvider:
         admin_telegram_id: int | None = None,
         auto_router: AutoRouterProtocol | None = None,
         health_registry: ModelHealthRegistry | None = None,
+        auto_low_confidence_threshold: float = 0.55,
+        default_low_confidence_policy: str = LOW_CONFIDENCE_POLICY_KEEP_CURRENT,
         default_selection_mode: str = "manual",
     ) -> None:
         normalized_providers = {
@@ -57,6 +78,11 @@ class UserSelectableLLMProvider:
         self._admin_telegram_id = admin_telegram_id
         self._auto_router = auto_router
         self._health_registry = health_registry
+        self._auto_low_confidence_threshold = min(1.0, max(0.0, float(auto_low_confidence_threshold)))
+        normalized_policy = default_low_confidence_policy.strip().lower()
+        if normalized_policy not in _LOW_CONFIDENCE_POLICIES:
+            normalized_policy = LOW_CONFIDENCE_POLICY_KEEP_CURRENT
+        self._default_low_confidence_policy = normalized_policy
         self._default_selection_mode = (
             "auto" if default_selection_mode.strip().lower() == "auto" else "manual"
         )
@@ -182,10 +208,14 @@ class UserSelectableLLMProvider:
         except Exception:
             return None
 
+        low_confidence_policy = await self._read_auto_low_confidence_policy(user_id=user_id)
+        low_confidence = decision.confidence < self._auto_low_confidence_threshold
         queue = self._build_auto_candidate_queue(
             decision=decision,
             catalog=catalog,
             candidate_model=candidate_model,
+            low_confidence=low_confidence,
+            low_confidence_policy=low_confidence_policy,
         )
         for item in queue:
             provider = item.provider
@@ -206,7 +236,16 @@ class UserSelectableLLMProvider:
                 suppress_errors=True,
             )
             if reply is not None:
-                return reply
+                return await self._apply_arbiter_if_needed(
+                    user_id=user_id,
+                    message=message,
+                    decision=decision,
+                    specialist_provider=provider,
+                    specialist_model=resolved_model,
+                    specialist_reply=reply,
+                    allowed_providers=allowed_providers,
+                    catalog=catalog,
+                )
         return None
 
     async def _build_router_catalog(
@@ -265,6 +304,8 @@ class UserSelectableLLMProvider:
         decision: RouteDecision,
         catalog: tuple[RouterCatalogEntry, ...],
         candidate_model: str | None,
+        low_confidence: bool,
+        low_confidence_policy: str,
     ) -> tuple[RouteCandidate, ...]:
         queue: list[RouteCandidate] = []
         seen: set[tuple[str, str]] = set()
@@ -314,7 +355,37 @@ class UserSelectableLLMProvider:
                     reason="catalog_fallback",
                 )
             )
+        if low_confidence and low_confidence_policy == LOW_CONFIDENCE_POLICY_UPGRADE_TIER:
+            queue = self._reprioritize_queue_for_low_confidence(
+                queue=queue,
+                catalog=catalog,
+            )
         return tuple(queue)
+
+    @staticmethod
+    def _reprioritize_queue_for_low_confidence(
+        *,
+        queue: list[RouteCandidate],
+        catalog: tuple[RouterCatalogEntry, ...],
+    ) -> list[RouteCandidate]:
+        catalog_tiers = {
+            (item.provider.strip().lower(), item.model.strip()): item.cost_tier
+            for item in catalog
+        }
+        with_index = list(enumerate(queue))
+        with_index.sort(
+            key=lambda item: (
+                -_AUTO_TIER_PRIORITY.get(
+                    catalog_tiers.get(
+                        (item[1].provider.strip().lower(), item[1].model.strip()),
+                        item[1].tier,
+                    ),
+                    -1,
+                ),
+                item[0],
+            )
+        )
+        return [candidate for _, candidate in with_index]
 
     async def _read_user_preferences(self, user_id: int) -> tuple[str | None, str | None]:
         selected_provider: str | None = None
@@ -340,6 +411,22 @@ class UserSelectableLLMProvider:
 
         selected_model = parsed_model
         return selected_provider, selected_model
+
+    async def _read_auto_low_confidence_policy(self, user_id: int) -> str:
+        if self._user_settings_store is None:
+            return self._default_low_confidence_policy
+        try:
+            raw_value = await self._user_settings_store.get_setting(
+                user_id=user_id,
+                key=LOW_CONFIDENCE_POLICY_SETTING_KEY,
+            )
+        except Exception:
+            return self._default_low_confidence_policy
+
+        normalized = (raw_value or "").strip().lower()
+        if normalized in _LOW_CONFIDENCE_POLICIES:
+            return normalized
+        return self._default_low_confidence_policy
 
     async def _get_allowed_providers(self, user_id: int) -> list[str]:
         allowed: list[str] = []
@@ -422,6 +509,151 @@ class UserSelectableLLMProvider:
         if self._health_registry is not None:
             self._health_registry.record_success(target_key)
         return reply
+
+    async def _apply_arbiter_if_needed(
+        self,
+        *,
+        user_id: int,
+        message: UserMessage,
+        decision: RouteDecision,
+        specialist_provider: str,
+        specialist_model: str | None,
+        specialist_reply: str,
+        allowed_providers: list[str],
+        catalog: tuple[RouterCatalogEntry, ...],
+    ) -> str:
+        if not self._should_use_arbiter(decision):
+            return specialist_reply
+
+        arbiter_target = await self._resolve_arbiter_target(
+            user_id=user_id,
+            decision=decision,
+            allowed_providers=allowed_providers,
+            catalog=catalog,
+        )
+        if arbiter_target is None:
+            return specialist_reply
+
+        arbiter_provider, arbiter_model = arbiter_target
+        arbiter_prompt = build_arbiter_prompt(
+            user_text=message.text,
+            specialist_answer=specialist_reply,
+        )
+        arbiter_reply = await self._generate_reply_with_provider(
+            provider_name=arbiter_provider,
+            model=arbiter_model,
+            message=UserMessage(
+                user_id=user_id,
+                text=arbiter_prompt,
+                timestamp=message.timestamp,
+            ),
+            suppress_errors=True,
+        )
+        if not arbiter_reply:
+            return specialist_reply
+
+        try:
+            arbiter_decision = parse_arbiter_decision(arbiter_reply)
+        except Exception:
+            return specialist_reply
+
+        if arbiter_decision.action == "approve":
+            return arbiter_decision.final_answer or specialist_reply
+        if arbiter_decision.action == "edit":
+            return arbiter_decision.final_answer or specialist_reply
+        if arbiter_decision.action != "regenerate":
+            return specialist_reply
+
+        if not arbiter_decision.regenerate_prompt:
+            return arbiter_decision.final_answer or specialist_reply
+
+        regenerated_prompt = build_regeneration_prompt(
+            original_user_text=message.text,
+            arbiter_feedback=arbiter_decision.feedback,
+            regeneration_instruction=arbiter_decision.regenerate_prompt,
+        )
+        regenerated_reply = await self._generate_reply_with_provider(
+            provider_name=specialist_provider,
+            model=specialist_model,
+            message=UserMessage(
+                user_id=user_id,
+                text=regenerated_prompt,
+                timestamp=message.timestamp,
+            ),
+            suppress_errors=True,
+        )
+        if regenerated_reply:
+            return regenerated_reply
+        return arbiter_decision.final_answer or specialist_reply
+
+    async def _resolve_arbiter_target(
+        self,
+        *,
+        user_id: int,
+        decision: RouteDecision,
+        allowed_providers: list[str],
+        catalog: tuple[RouterCatalogEntry, ...],
+    ) -> tuple[str, str | None] | None:
+        if decision.arbiter and decision.arbiter.enabled and decision.arbiter.provider:
+            explicit_target = await self._resolve_candidate_target(
+                user_id=user_id,
+                provider=decision.arbiter.provider,
+                candidate_model=decision.arbiter.model,
+                allowed_providers=allowed_providers,
+            )
+            if explicit_target is not None:
+                return explicit_target
+
+        if decision.risk_level != "high":
+            return None
+
+        sorted_catalog = sorted(
+            catalog,
+            key=lambda item: (
+                -_AUTO_TIER_PRIORITY.get(item.cost_tier, -1),
+                item.provider,
+                item.model,
+            ),
+        )
+        for item in sorted_catalog:
+            target = await self._resolve_candidate_target(
+                user_id=user_id,
+                provider=item.provider,
+                candidate_model=item.model,
+                allowed_providers=allowed_providers,
+            )
+            if target is not None:
+                return target
+        return None
+
+    async def _resolve_candidate_target(
+        self,
+        *,
+        user_id: int,
+        provider: str,
+        candidate_model: str | None,
+        allowed_providers: list[str],
+    ) -> tuple[str, str | None] | None:
+        normalized_provider = provider.strip().lower()
+        if normalized_provider not in allowed_providers:
+            return None
+        resolved_model = await self._resolve_model_for_provider(
+            user_id=user_id,
+            provider=normalized_provider,
+            candidate_model=candidate_model,
+            strict_candidate=True,
+        )
+        if resolved_model is None and self._provider_requires_model(normalized_provider):
+            return None
+        return normalized_provider, resolved_model
+
+    @staticmethod
+    def _should_use_arbiter(decision: RouteDecision) -> bool:
+        if decision.arbiter and decision.arbiter.enabled:
+            return True
+        if decision.risk_level == "high":
+            return True
+        return False
 
     def _is_auto_mode_requested(self, selected_provider: str | None) -> bool:
         if selected_provider == AUTO_PROVIDER_NAME:

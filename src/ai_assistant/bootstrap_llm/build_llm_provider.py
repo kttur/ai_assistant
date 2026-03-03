@@ -50,6 +50,7 @@ def build_llm_provider(
         admin_telegram_id=settings.admin_telegram_id,
         auto_router=auto_router,
         health_registry=health_registry,
+        auto_low_confidence_threshold=settings.auto_router_low_confidence_threshold,
         default_selection_mode=(
             "auto" if configured_default_provider == AUTO_LLM_PROVIDER else "manual"
         ),

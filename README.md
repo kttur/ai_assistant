@@ -133,6 +133,7 @@ For compose mode, app container overrides:
 - `AI_ASSISTANT_AUTO_ROUTER_CLOUD_PROVIDER` - fallback router backend provider (default `openai`).
 - `AI_ASSISTANT_AUTO_ROUTER_CLOUD_MODEL` - fallback router model.
 - `AI_ASSISTANT_AUTO_ROUTER_TIMEOUT_SECONDS` - timeout for a single router request.
+- `AI_ASSISTANT_AUTO_ROUTER_LOW_CONFIDENCE_THRESHOLD` - confidence threshold below which user low-confidence policy is applied.
 - `AI_ASSISTANT_LLM_HEALTH_BASE_COOLDOWN_SECONDS` - initial cooldown for unhealthy model/router targets.
 - `AI_ASSISTANT_LLM_HEALTH_MAX_COOLDOWN_SECONDS` - max cooldown for unhealthy model/router targets.
 - `USER_SETTINGS_BACKEND` - settings backend (`memory`, `postgres`).
@@ -239,11 +240,19 @@ and setting/option names and descriptions come from PostgreSQL i18n tables.
 `/settings` now includes choice settings:
 - `llm_provider` - model backend;
 - `llm_model` - model in `provider:model` format.
+- `llm_auto_low_confidence_policy` - behavior when router confidence is low (`keep_current` or `upgrade_tier`).
 
 `llm_provider=auto` enables policy-based routing:
 - local router model (primary) analyzes request complexity/risk and returns candidate queue;
 - if local router is unavailable, cloud router fallback is used;
 - if selected specialist model is unavailable at runtime, next candidate is used.
+- if router confidence is below `AI_ASSISTANT_AUTO_ROUTER_LOW_CONFIDENCE_THRESHOLD`, user policy is applied:
+  - `keep_current`: keep router candidate order;
+  - `upgrade_tier`: prioritize more expensive/higher-accuracy candidates.
+- arbiter model can validate specialist output and either:
+  - approve result,
+  - return minor edits,
+  - request one regeneration attempt with refined instructions.
 
 The list of available options comes from `.env`:
 - providers: `LLM_AVAILABLE_PROVIDERS`;

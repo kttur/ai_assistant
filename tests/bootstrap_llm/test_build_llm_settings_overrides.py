@@ -12,7 +12,7 @@ def test_build_llm_settings_overrides_adds_auto_provider_option(monkeypatch) -> 
     monkeypatch.setenv("AI_ASSISTANT_OPENAI_AVAILABLE_MODELS", "gpt-4.1-mini")
 
     settings = Settings.from_env()
-    _, options, _, choice_translations = build_llm_settings_overrides(
+    definitions, options, translations, choice_translations = build_llm_settings_overrides(
         settings=settings,
         enabled_providers=("ollama", "openai"),
     )
@@ -29,4 +29,15 @@ def test_build_llm_settings_overrides_adds_auto_provider_option(monkeypatch) -> 
 
     ru_translations = choice_translations["ru"]
     assert ru_translations[("llm_provider", "auto")]["display_name"] == "Авто"
+    assert any(item.key == "llm_auto_low_confidence_policy" for item in definitions)
 
+    policy_options = [item for item in options if item.setting_id == "llm_auto_low_confidence_policy"]
+    assert [item.name for item in policy_options] == ["keep_current", "upgrade_tier"]
+    assert (
+        ru_translations[("llm_auto_low_confidence_policy", "upgrade_tier")]["display_name"]
+        == "Выбрать подороже"
+    )
+    assert (
+        translations["ru"]["llm_auto_low_confidence_policy"]["title"]
+        == "Политика при низкой уверенности"
+    )

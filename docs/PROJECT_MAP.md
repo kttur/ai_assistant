@@ -151,6 +151,7 @@ ai_assistant
 │   ├── llm
 │   │   ├── __init__.py
 │   │   ├── anthropic_provider.py
+│   │   ├── arbiter.py
 │   │   ├── auto_router.py
 │   │   ├── auto_router_policy.py
 │   │   ├── auto_router_types.py
@@ -223,6 +224,7 @@ tests
 └── providers
     ├── llm
     │   ├── test_anthropic_provider.py
+    │   ├── test_arbiter.py
     │   ├── test_auto_router.py
     │   ├── test_auto_router_types.py
     │   ├── test_model_health_registry.py
@@ -264,7 +266,7 @@ context
 
 ## Largest Python Files in `src`
 
-- `src\ai_assistant\providers\llm\user_selectable_provider.py`: 514 lines
+- `src\ai_assistant\providers\llm\user_selectable_provider.py`: 746 lines
 - `src\ai_assistant\modules\telegram\handler_methods\handle_settings_callback.py`: 308 lines
 - `src\ai_assistant\core\service.py`: 285 lines
 - `src\ai_assistant\providers\system\voicemeeter_output_controller.py`: 263 lines
@@ -273,7 +275,7 @@ context
 - `src\ai_assistant\providers\settings\in_memory_user_settings_store.py`: 232 lines
 - `src\ai_assistant\devtools\sync_docs.py`: 223 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_interactive.py`: 222 lines
-- `src\ai_assistant\config\settings.py`: 209 lines
+- `src\ai_assistant\config\settings.py`: 217 lines
 - `src\ai_assistant\providers\permissions\in_memory_permission_checker.py`: 202 lines
 - `src\ai_assistant\providers\llm\auto_router.py`: 194 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_executor.py`: 194 lines
@@ -282,14 +284,14 @@ context
 
 ## Largest Python Files in `tests`
 
+- `tests\providers\llm\test_user_selectable_provider.py`: 670 lines
 - `tests\modules\telegram\test_handlers_settings.py`: 519 lines
-- `tests\providers\llm\test_user_selectable_provider.py`: 439 lines
 - `tests\modules\telegram\_shared.py`: 341 lines
 - `tests\modules\telegram\test_handlers_basic.py`: 307 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\core\test_assistant_service.py`: 217 lines
 - `tests\providers\llm\test_ollama_provider.py`: 184 lines
-- `tests\config\test_settings.py`: 174 lines
+- `tests\config\test_settings.py`: 176 lines
 - `tests\providers\llm\test_auto_router.py`: 157 lines
 - `tests\modules\telegram\test_handlers_media.py`: 136 lines
 

@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from ai_assistant.core.models import UserMessage
-from ai_assistant.providers.llm.auto_router_types import RouteCandidate, RouteDecision
+from ai_assistant.providers.llm.auto_router_types import RouteArbiter, RouteCandidate, RouteDecision
 from ai_assistant.providers.llm.model_health_registry import ModelHealthRegistry
 from ai_assistant.providers.llm.user_selectable_provider import UserSelectableLLMProvider
 
@@ -28,6 +28,23 @@ class _FlakyProvider(_FakeProvider):
         if model in self.failing_models:
             raise RuntimeError(f"{self.name} failed for model {model}")
         return f"{self.name}:{model or '-'}"
+
+
+class _ScriptedProvider(_FakeProvider):
+    def __init__(self, name: str, replies: list[object]) -> None:
+        super().__init__(name)
+        self._replies = list(replies)
+        self.messages: list[tuple[int, str | None, str]] = []
+
+    async def generate_reply_for_model(self, message: UserMessage, model: str | None = None) -> str:
+        self.calls.append((message.user_id, model))
+        self.messages.append((message.user_id, model, message.text))
+        if not self._replies:
+            raise RuntimeError("No scripted response configured.")
+        reply = self._replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return str(reply)
 
 
 class _FakeStore:
@@ -437,3 +454,217 @@ def test_user_selectable_provider_default_auto_mode_uses_router_without_explicit
     assert result == "openai:gpt-4.1-mini"
     assert len(auto_router.calls) == 1
     assert openai.calls == [(130, "gpt-4.1-mini")]
+
+
+def test_auto_mode_low_confidence_keep_current_policy_preserves_router_priority() -> None:
+    ollama = _FakeProvider("ollama")
+    openai = _FakeProvider("openai")
+    store = _FakeStore(
+        {
+            (140, "llm_provider"): "auto",
+        }
+    )
+    auto_router = _FakeAutoRouter(
+        [
+            RouteDecision(
+                confidence=0.2,
+                risk_level="medium",
+                complexity="medium",
+                required_capabilities=(),
+                candidates=(
+                    RouteCandidate(provider="ollama", model="llama3.1"),
+                    RouteCandidate(provider="openai", model="gpt-4.1-mini"),
+                ),
+            )
+        ]
+    )
+    router = UserSelectableLLMProvider(
+        providers={"ollama": ollama, "openai": openai},
+        default_provider="openai",
+        default_models={"openai": "gpt-4.1-mini", "ollama": "llama3.1"},
+        available_models={"openai": ("gpt-4.1-mini",), "ollama": ("llama3.1",)},
+        user_settings_store=store,
+        auto_router=auto_router,
+        auto_low_confidence_threshold=0.5,
+    )
+
+    result = asyncio.run(router.generate_reply(UserMessage(user_id=140, text="hello")))
+
+    assert result == "ollama:llama3.1"
+    assert ollama.calls == [(140, "llama3.1")]
+    assert openai.calls == []
+
+
+def test_auto_mode_low_confidence_upgrade_tier_policy_prefers_higher_tier_model() -> None:
+    ollama = _FakeProvider("ollama")
+    openai = _FakeProvider("openai")
+    store = _FakeStore(
+        {
+            (150, "llm_provider"): "auto",
+            (150, "llm_auto_low_confidence_policy"): "upgrade_tier",
+        }
+    )
+    auto_router = _FakeAutoRouter(
+        [
+            RouteDecision(
+                confidence=0.2,
+                risk_level="medium",
+                complexity="medium",
+                required_capabilities=(),
+                candidates=(
+                    RouteCandidate(provider="ollama", model="llama3.1"),
+                    RouteCandidate(provider="openai", model="gpt-4.1-mini"),
+                ),
+            )
+        ]
+    )
+    router = UserSelectableLLMProvider(
+        providers={"ollama": ollama, "openai": openai},
+        default_provider="openai",
+        default_models={"openai": "gpt-4.1-mini", "ollama": "llama3.1"},
+        available_models={"openai": ("gpt-4.1-mini",), "ollama": ("llama3.1",)},
+        user_settings_store=store,
+        auto_router=auto_router,
+        auto_low_confidence_threshold=0.5,
+    )
+
+    result = asyncio.run(router.generate_reply(UserMessage(user_id=150, text="hello")))
+
+    assert result == "openai:gpt-4.1-mini"
+    assert openai.calls == [(150, "gpt-4.1-mini")]
+    assert ollama.calls == []
+
+
+def test_auto_mode_arbiter_can_edit_specialist_answer() -> None:
+    specialist = _ScriptedProvider("ollama", replies=["draft answer"])
+    arbiter = _ScriptedProvider(
+        "openai",
+        replies=[
+            '{"action":"edit","final_answer":"edited answer","feedback":"fixed wording"}',
+        ],
+    )
+    store = _FakeStore(
+        {
+            (160, "llm_provider"): "auto",
+        }
+    )
+    auto_router = _FakeAutoRouter(
+        [
+            RouteDecision(
+                confidence=0.8,
+                risk_level="medium",
+                complexity="medium",
+                required_capabilities=(),
+                candidates=(RouteCandidate(provider="ollama", model="llama3.1"),),
+                arbiter=RouteArbiter(
+                    enabled=True,
+                    provider="openai",
+                    model="gpt-4.1-mini",
+                ),
+            )
+        ]
+    )
+    router = UserSelectableLLMProvider(
+        providers={"ollama": specialist, "openai": arbiter},
+        default_provider="ollama",
+        default_models={"openai": "gpt-4.1-mini", "ollama": "llama3.1"},
+        available_models={"openai": ("gpt-4.1-mini",), "ollama": ("llama3.1",)},
+        user_settings_store=store,
+        auto_router=auto_router,
+    )
+
+    result = asyncio.run(router.generate_reply(UserMessage(user_id=160, text="question")))
+
+    assert result == "edited answer"
+    assert specialist.calls == [(160, "llama3.1")]
+    assert arbiter.calls == [(160, "gpt-4.1-mini")]
+    assert "draft answer" in arbiter.messages[0][2]
+
+
+def test_auto_mode_arbiter_can_request_single_regeneration() -> None:
+    specialist = _ScriptedProvider("ollama", replies=["first draft", "regenerated draft"])
+    arbiter = _ScriptedProvider(
+        "openai",
+        replies=[
+            (
+                '{"action":"regenerate","feedback":"missing details",'
+                '"regenerate_prompt":"add implementation details"}'
+            ),
+        ],
+    )
+    store = _FakeStore(
+        {
+            (170, "llm_provider"): "auto",
+        }
+    )
+    auto_router = _FakeAutoRouter(
+        [
+            RouteDecision(
+                confidence=0.8,
+                risk_level="medium",
+                complexity="high",
+                required_capabilities=("reasoning",),
+                candidates=(RouteCandidate(provider="ollama", model="llama3.1"),),
+                arbiter=RouteArbiter(
+                    enabled=True,
+                    provider="openai",
+                    model="gpt-4.1-mini",
+                ),
+            )
+        ]
+    )
+    router = UserSelectableLLMProvider(
+        providers={"ollama": specialist, "openai": arbiter},
+        default_provider="ollama",
+        default_models={"openai": "gpt-4.1-mini", "ollama": "llama3.1"},
+        available_models={"openai": ("gpt-4.1-mini",), "ollama": ("llama3.1",)},
+        user_settings_store=store,
+        auto_router=auto_router,
+    )
+
+    result = asyncio.run(router.generate_reply(UserMessage(user_id=170, text="question")))
+
+    assert result == "regenerated draft"
+    assert specialist.calls == [(170, "llama3.1"), (170, "llama3.1")]
+    assert arbiter.calls == [(170, "gpt-4.1-mini")]
+    assert "missing details" in specialist.messages[1][2]
+    assert "add implementation details" in specialist.messages[1][2]
+
+
+def test_auto_mode_uses_high_risk_arbiter_even_when_router_arbiter_missing() -> None:
+    specialist = _ScriptedProvider("ollama", replies=["specialist answer"])
+    arbiter = _ScriptedProvider(
+        "openai",
+        replies=['{"action":"approve","feedback":"looks good"}'],
+    )
+    store = _FakeStore(
+        {
+            (180, "llm_provider"): "auto",
+        }
+    )
+    auto_router = _FakeAutoRouter(
+        [
+            RouteDecision(
+                confidence=0.9,
+                risk_level="high",
+                complexity="high",
+                required_capabilities=("reasoning",),
+                candidates=(RouteCandidate(provider="ollama", model="llama3.1"),),
+                arbiter=None,
+            )
+        ]
+    )
+    router = UserSelectableLLMProvider(
+        providers={"ollama": specialist, "openai": arbiter},
+        default_provider="ollama",
+        default_models={"openai": "gpt-4.1-mini", "ollama": "llama3.1"},
+        available_models={"openai": ("gpt-4.1-mini",), "ollama": ("llama3.1",)},
+        user_settings_store=store,
+        auto_router=auto_router,
+    )
+
+    result = asyncio.run(router.generate_reply(UserMessage(user_id=180, text="question")))
+
+    assert result == "specialist answer"
+    assert specialist.calls == [(180, "llama3.1")]
+    assert arbiter.calls == [(180, "gpt-4.1-mini")]

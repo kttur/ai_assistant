@@ -40,6 +40,7 @@ class Settings:
     auto_router_cloud_provider: str
     auto_router_cloud_model: str
     auto_router_timeout_seconds: float
+    auto_router_low_confidence_threshold: float
     llm_health_base_cooldown_seconds: int
     llm_health_max_cooldown_seconds: int
     openai_available_models: tuple[str, ...]
@@ -133,6 +134,13 @@ class Settings:
                     "AI_ASSISTANT_AUTO_ROUTER_TIMEOUT_SECONDS",
                     "AUTO_ROUTER_TIMEOUT_SECONDS",
                     default="20",
+                )
+            ),
+            auto_router_low_confidence_threshold=float(
+                _get_first_env(
+                    "AI_ASSISTANT_AUTO_ROUTER_LOW_CONFIDENCE_THRESHOLD",
+                    "AUTO_ROUTER_LOW_CONFIDENCE_THRESHOLD",
+                    default="0.55",
                 )
             ),
             llm_health_base_cooldown_seconds=int(
