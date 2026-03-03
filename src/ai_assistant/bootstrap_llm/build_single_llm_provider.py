@@ -46,6 +46,7 @@ def build_single_llm_provider(provider: str, settings: Settings) -> LLMProvider:
             api_key=settings.anthropic_api_key,
             model=settings.anthropic_model,
             base_url=settings.anthropic_base_url,
+            max_tokens=settings.anthropic_max_tokens,
         )
     if provider == "ollama":
         return OllamaProvider(

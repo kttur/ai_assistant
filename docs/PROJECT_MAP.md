@@ -276,9 +276,9 @@ context
 - `src\ai_assistant\providers\llm\auto_router.py`: 257 lines
 - `src\ai_assistant\providers\permissions\postgres_permission_checker.py`: 253 lines
 - `src\ai_assistant\providers\settings\in_memory_user_settings_store.py`: 232 lines
+- `src\ai_assistant\config\settings.py`: 225 lines
 - `src\ai_assistant\devtools\sync_docs.py`: 223 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_interactive.py`: 222 lines
-- `src\ai_assistant\config\settings.py`: 217 lines
 - `src\ai_assistant\modules\telegram\handlers.py`: 203 lines
 - `src\ai_assistant\providers\permissions\in_memory_permission_checker.py`: 202 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_executor.py`: 194 lines
@@ -293,7 +293,7 @@ context
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\core\test_assistant_service.py`: 217 lines
 - `tests\providers\llm\test_ollama_provider.py`: 184 lines
-- `tests\config\test_settings.py`: 176 lines
+- `tests\config\test_settings.py`: 182 lines
 - `tests\providers\llm\test_auto_router.py`: 157 lines
 - `tests\modules\telegram\test_handlers_media.py`: 136 lines
 

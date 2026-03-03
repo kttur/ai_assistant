@@ -18,10 +18,12 @@ ANTHROPIC_ENV_KEYS = (
     "AI_ASSISTANT_ANTHROPIC_API_KEY",
     "AI_ASSISTANT_ANTHROPIC_BASE_URL",
     "AI_ASSISTANT_ANTHROPIC_MODEL",
+    "AI_ASSISTANT_ANTHROPIC_MAX_TOKENS",
     "AI_ASSISTANT_ANTHROPIC_AVAILABLE_MODELS",
     "ANTHROPIC_API_KEY",
     "ANTHROPIC_BASE_URL",
     "ANTHROPIC_MODEL",
+    "ANTHROPIC_MAX_TOKENS",
     "ANTHROPIC_AVAILABLE_MODELS",
 )
 
@@ -108,6 +110,7 @@ def test_from_env_reads_ai_assistant_anthropic_variables(monkeypatch) -> None:
     monkeypatch.setenv("AI_ASSISTANT_ANTHROPIC_API_KEY", "anthropic-new-key")
     monkeypatch.setenv("AI_ASSISTANT_ANTHROPIC_BASE_URL", "https://anthropic.example/v1")
     monkeypatch.setenv("AI_ASSISTANT_ANTHROPIC_MODEL", "claude-x")
+    monkeypatch.setenv("AI_ASSISTANT_ANTHROPIC_MAX_TOKENS", "7000")
     monkeypatch.setenv("AI_ASSISTANT_ANTHROPIC_AVAILABLE_MODELS", "claude-x,claude-y")
 
     settings = Settings.from_env()
@@ -115,6 +118,7 @@ def test_from_env_reads_ai_assistant_anthropic_variables(monkeypatch) -> None:
     assert settings.anthropic_api_key == "anthropic-new-key"
     assert settings.anthropic_base_url == "https://anthropic.example/v1"
     assert settings.anthropic_model == "claude-x"
+    assert settings.anthropic_max_tokens == 7000
     assert settings.anthropic_available_models == ("claude-x", "claude-y")
 
 
@@ -166,6 +170,7 @@ def test_from_env_keeps_anthropic_legacy_fallback(monkeypatch) -> None:
     monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-legacy-key")
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://legacy.anthropic.example/v1")
     monkeypatch.setenv("ANTHROPIC_MODEL", "claude-legacy")
+    monkeypatch.setenv("ANTHROPIC_MAX_TOKENS", "6000")
     monkeypatch.setenv("ANTHROPIC_AVAILABLE_MODELS", "claude-legacy,claude-legacy-2")
 
     settings = Settings.from_env()
@@ -173,4 +178,5 @@ def test_from_env_keeps_anthropic_legacy_fallback(monkeypatch) -> None:
     assert settings.anthropic_api_key == "anthropic-legacy-key"
     assert settings.anthropic_base_url == "https://legacy.anthropic.example/v1"
     assert settings.anthropic_model == "claude-legacy"
+    assert settings.anthropic_max_tokens == 6000
     assert settings.anthropic_available_models == ("claude-legacy", "claude-legacy-2")

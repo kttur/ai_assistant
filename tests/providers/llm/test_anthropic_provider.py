@@ -59,6 +59,7 @@ def test_anthropic_provider_generates_reply(monkeypatch) -> None:
     assert init_args["base_url"] == "https://api.anthropic.com"
     assert calls
     assert calls[0]["model"] == "claude-3-5-sonnet-latest"
+    assert calls[0]["max_tokens"] == 4096
     assert calls[0]["messages"] == [{"role": "user", "content": "Hello"}]
     assert "Telegram HTML formatting only" in str(calls[0]["system"])
 
@@ -80,6 +81,21 @@ def test_anthropic_provider_uses_explicit_model(monkeypatch) -> None:
 
     assert reply == "override model reply"
     assert calls[0]["model"] == "claude-3-7-sonnet-latest"
+
+
+def test_anthropic_provider_uses_configured_max_tokens(monkeypatch) -> None:
+    response = types.SimpleNamespace(content=[types.SimpleNamespace(text="Hello from Claude")])
+    calls, _ = _install_fake_anthropic_module(monkeypatch, response=response)
+    provider = AnthropicProvider(
+        api_key="anthropic-key",
+        model="claude-3-5-sonnet-latest",
+        max_tokens=8192,
+    )
+
+    reply = asyncio.run(provider.generate_reply(UserMessage(user_id=1, text="Hello")))
+
+    assert reply == "Hello from Claude"
+    assert calls[0]["max_tokens"] == 8192
 
 
 def test_anthropic_provider_raises_on_request_error(monkeypatch) -> None:

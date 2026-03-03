@@ -15,6 +15,7 @@ Formatting requirements:
 - Do not include unsupported tags or raw HTML comments/scripts.
 - Exception: if prompt explicitly requests tool calls, output exact <tool_call>{...}</tool_call>.
 """
+DEFAULT_MAX_TOKENS = 4096
 
 
 class AnthropicProvider:
@@ -25,13 +26,17 @@ class AnthropicProvider:
         base_url: str = "",
         timeout_seconds: float = 120.0,
         system_prompt: str = DEFAULT_SYSTEM_PROMPT,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
     ) -> None:
         if not api_key.strip():
             raise ValueError(
                 "AI_ASSISTANT_ANTHROPIC_API_KEY (or ANTHROPIC_API_KEY) is required for anthropic provider."
             )
+        if max_tokens < 1:
+            raise ValueError("Anthropic max_tokens must be greater than zero.")
         self._model = model
         self._system_prompt = system_prompt
+        self._max_tokens = max_tokens
 
         try:
             from anthropic import AsyncAnthropic  # type: ignore
@@ -46,9 +51,10 @@ class AnthropicProvider:
             timeout=timeout_seconds,
         )
         logging.getLogger(__name__).info(
-            "Anthropic provider initialized: model=%s base_url=%s",
+            "Anthropic provider initialized: model=%s base_url=%s max_tokens=%d",
             self._model,
             base_url.strip() or "default",
+            self._max_tokens,
         )
 
     async def generate_reply(self, message: UserMessage) -> str:
@@ -73,7 +79,7 @@ class AnthropicProvider:
         try:
             response = await self._client.messages.create(
                 model=target_model,
-                max_tokens=1024,
+                max_tokens=self._max_tokens,
                 system=self._system_prompt,
                 messages=[
                     {"role": "user", "content": message.text},

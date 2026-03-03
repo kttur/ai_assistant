@@ -13,6 +13,11 @@
 - Before finalizing substantial changes, ensure check mode passes:
   - `python -m ai_assistant.devtools.sync_docs --check`
 
+## Environment Variable Sync Rule
+
+- If you add, remove, or rename any environment variable used by the app, update `.env.example` in the same change.
+- Keep default values and comments in `.env.example` aligned with `src/ai_assistant/config/settings.py`.
+
 ## Priority Sources
 
 - Project map: `docs/PROJECT_MAP.md` (auto-generated).

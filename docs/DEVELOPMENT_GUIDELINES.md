@@ -64,6 +64,8 @@
 
 - Canonical docs live in `docs/`.
 - Runtime/context docs live in `context/`.
+- If an app environment variable is added/removed/renamed, update `.env.example` in the same change.
+- Keep `.env.example` defaults consistent with `src/ai_assistant/config/settings.py`.
 - Generated docs must be synced after structure changes:
   - `python -m ai_assistant.devtools.sync_docs`
 - Freshness check:

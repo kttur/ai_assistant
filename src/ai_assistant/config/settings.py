@@ -65,6 +65,7 @@ class Settings:
     anthropic_api_key: str
     anthropic_base_url: str
     anthropic_model: str
+    anthropic_max_tokens: int
     ollama_base_url: str
     ollama_model: str
     ollama_auth_header_name: str
@@ -197,6 +198,13 @@ class Settings:
                 default="",
             ),
             anthropic_model=anthropic_model,
+            anthropic_max_tokens=int(
+                _get_first_env(
+                    "AI_ASSISTANT_ANTHROPIC_MAX_TOKENS",
+                    "ANTHROPIC_MAX_TOKENS",
+                    default="4096",
+                )
+            ),
             ollama_base_url=getenv("OLLAMA_BASE_URL", "http://localhost:11434"),
             ollama_model=ollama_model,
             ollama_auth_header_name=_get_first_env(
