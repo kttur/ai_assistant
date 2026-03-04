@@ -134,7 +134,7 @@ TLS certificates (Let's Encrypt via certbot) in compose:
    - `AI_ASSISTANT_REMOTE_TLS_CERT_PATH=/etc/letsencrypt/live/<your-domain>/fullchain.pem`
    - `AI_ASSISTANT_REMOTE_TLS_KEY_PATH=/etc/letsencrypt/live/<your-domain>/privkey.pem`
 2. Issue first certificate:
-   - `docker compose --profile tls run --rm certbot-init`
+   - `docker compose --profile tls run --rm --service-ports certbot-init`
 3. Start app + postgres:
    - `docker compose up -d app postgres`
 4. Start renew loop:
@@ -143,6 +143,8 @@ TLS certificates (Let's Encrypt via certbot) in compose:
 Notes:
 - certbot uses HTTP-01 challenge on port `80`, so your domain must resolve to this host and port `80` must be reachable from the internet;
 - app container mounts `/etc/letsencrypt` as read-only volume, so issued certs are available immediately for TLS startup.
+- when using `docker compose run` for certbot, use `--service-ports`; without it, port `80` is not published and challenge validation fails with timeout.
+- if challenge still times out, check DNS A/AAAA records, cloud/security-group firewall, host firewall, and (if used) disable Cloudflare proxy for the domain during issuance.
 
 ## Key Environment Variables
 
