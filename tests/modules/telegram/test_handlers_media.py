@@ -1,5 +1,24 @@
 from tests.modules.telegram._shared import *
 
+
+class FakeRemoteHubForMedia:
+    def __init__(self, should_fail: bool = False) -> None:
+        self.calls: list[tuple[int, str, dict[str, object]]] = []
+        self.should_fail = should_fail
+
+    async def execute_user_remote_command(
+        self,
+        *,
+        user_id: int,
+        command: str,
+        args: dict[str, object],
+    ) -> dict[str, object]:
+        self.calls.append((user_id, command, args))
+        if self.should_fail:
+            return {"ok": False, "message": "Remote command failed."}
+        return {"ok": True, "message": "done"}
+
+
 def test_handle_player_shows_keyboard() -> None:
     assistant = FakeAssistantService()
     handlers = TelegramHandlers(assistant_service=assistant)
@@ -68,6 +87,23 @@ def test_handle_player_output_button_toggles_output() -> None:
     assert update.callback_query.answers == [("Speakers output: ON", False)]
 
 
+def test_handle_player_button_uses_remote_when_local_media_not_configured() -> None:
+    assistant = FakeAssistantService()
+    remote_hub = FakeRemoteHubForMedia()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        remote_ws_hub=remote_hub,
+    )
+    update = FakeUpdate(user_id=101)
+    update.callback_query = FakeCallbackQuery(data=PLAYER_NEXT, message=update.effective_message)
+    context = SimpleNamespace(args=[])
+
+    asyncio.run(handlers.handle_player_button(update, context))
+
+    assert remote_hub.calls == [(101, "media.next_track", {})]
+    assert update.callback_query.answers == [("Next track", False)]
+
+
 def test_handle_mpc_shows_keyboard() -> None:
     assistant = FakeAssistantService()
     handlers = TelegramHandlers(assistant_service=assistant)
@@ -132,5 +168,39 @@ def test_handle_mpc_button_selects_ru_subtitles() -> None:
 
     assert mpc_controller.actions == ["subtitle_ru"]
     assert update.callback_query.answers == [("Субтитры: переключено на RU", False)]
+
+
+def test_handle_mpc_button_uses_remote_when_local_mpc_not_configured() -> None:
+    assistant = FakeAssistantService()
+    remote_hub = FakeRemoteHubForMedia()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        remote_ws_hub=remote_hub,
+    )
+    update = FakeUpdate(user_id=101)
+    update.callback_query = FakeCallbackQuery(data=MPC_AUDIO_RU, message=update.effective_message)
+    context = SimpleNamespace(args=[])
+
+    asyncio.run(handlers.handle_mpc_button(update, context))
+
+    assert remote_hub.calls == [(101, "mpc.audio_set_language", {"language": "ru"})]
+    assert update.callback_query.answers == [("Аудио: переключено на RU", False)]
+
+
+def test_handle_mpc_button_shows_remote_error_when_remote_failed() -> None:
+    assistant = FakeAssistantService()
+    remote_hub = FakeRemoteHubForMedia(should_fail=True)
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        remote_ws_hub=remote_hub,
+    )
+    update = FakeUpdate(user_id=101)
+    update.callback_query = FakeCallbackQuery(data=MPC_AUDIO_NEXT, message=update.effective_message)
+    context = SimpleNamespace(args=[])
+
+    asyncio.run(handlers.handle_mpc_button(update, context))
+
+    assert remote_hub.calls == [(101, "mpc.audio_next", {})]
+    assert update.callback_query.answers == [("Remote command failed.", True)]
 
 

@@ -330,14 +330,14 @@ context
 
 - `tests\providers\llm\test_user_selectable_provider.py`: 670 lines
 - `tests\modules\telegram\test_handlers_settings.py`: 519 lines
+- `tests\modules\telegram\test_handlers_basic.py`: 359 lines
 - `tests\modules\telegram\_shared.py`: 341 lines
-- `tests\modules\telegram\test_handlers_basic.py`: 334 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\core\test_assistant_service.py`: 219 lines
 - `tests\config\test_settings.py`: 209 lines
+- `tests\modules\telegram\test_handlers_media.py`: 206 lines
 - `tests\providers\llm\test_ollama_provider.py`: 184 lines
 - `tests\modules\telegram\test_handlers_remote.py`: 170 lines
-- `tests\providers\llm\test_auto_router.py`: 157 lines
 
 ## Notes for LLM Agents
 

@@ -255,6 +255,7 @@ Next launches authenticate automatically without new code (until unlink).
 
 - Client keeps reconnecting automatically after network failures.
 - LLM receives remote tools as `remote.<command>` for linked online devices.
+- `/player` and `/mpc` continue to work even without local media/MPC controllers: button actions are routed to remote device commands when remote runtime is available.
 - Manual execution from Telegram:
   - `/pc_run media.play_pause`
   - `/pc_run mpc.audio_set_language {"language":"ru"}`

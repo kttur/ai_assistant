@@ -70,6 +70,31 @@ def test_handle_start_hides_ai_block_without_assistant_permission() -> None:
     assert "/ping -" in text
 
 
+def test_handle_start_shows_player_and_mpc_when_remote_runtime_available() -> None:
+    assistant = FakeAssistantService()
+    permissions = FakePermissionChecker(
+        allowed={
+            (101, "general", "usage"),
+            (101, "command", "start"),
+            (101, "command", "player"),
+            (101, "command", "mpc"),
+        }
+    )
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        permission_checker=permissions,
+        remote_ws_hub=object(),
+    )
+    update = FakeUpdate(user_id=101)
+    context = SimpleNamespace(args=[])
+
+    asyncio.run(handlers.handle_start(update, context))
+
+    text = update.effective_message.replies[0]
+    assert "/player -" in text
+    assert "/mpc -" in text
+
+
 def test_handle_start_uses_user_language_setting_for_localized_text() -> None:
     assistant = FakeAssistantService()
     permissions = FakePermissionChecker(

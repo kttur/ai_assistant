@@ -46,6 +46,14 @@ async def handle_player_button(self, update: Update, context: ContextTypes.DEFAU
     if await self._reject_if_no_callback_permission(update, "command", "player"):
         return
 
+    def _resolve_media_remote_command(callback_data: str | None) -> str | None:
+        mapping = {
+            PLAYER_PLAY_PAUSE: "media.play_pause",
+            PLAYER_PREVIOUS: "media.previous_track",
+            PLAYER_NEXT: "media.next_track",
+        }
+        return mapping.get(callback_data)
+
     try:
         if query.data == PLAYER_OUTPUT_TOGGLE:
             if not self._output_controller:
@@ -60,22 +68,47 @@ async def handle_player_button(self, update: Update, context: ContextTypes.DEFAU
             await self._answer_callback(query, f"Speakers output: {state}")
             return
 
-        if not self._media_controller:
+        callback_to_reply = {
+            PLAYER_PLAY_PAUSE: "Play/Pause",
+            PLAYER_PREVIOUS: "Previous track",
+            PLAYER_NEXT: "Next track",
+        }
+        reply_text = callback_to_reply.get(query.data)
+        if reply_text is None:
+            await self._answer_callback(query, "Неизвестная кнопка.")
+            return
+
+        if self._media_controller is not None:
+            if query.data == PLAYER_PLAY_PAUSE:
+                self._media_controller.play_pause()
+            elif query.data == PLAYER_PREVIOUS:
+                self._media_controller.previous_track()
+            elif query.data == PLAYER_NEXT:
+                self._media_controller.next_track()
+            await self._answer_callback(query, reply_text)
+            return
+
+        remote_command = _resolve_media_remote_command(query.data)
+        if (
+            remote_command is None
+            or self._remote_ws_hub is None
+            or update.effective_user is None
+        ):
             await self._answer_callback(query, "Медиа-контроль не настроен.", show_alert=True)
             return
 
-        if query.data == PLAYER_PLAY_PAUSE:
-            self._media_controller.play_pause()
-            await self._answer_callback(query, "Play/Pause")
+        remote_result = await self._remote_ws_hub.execute_user_remote_command(
+            user_id=update.effective_user.id,
+            command=remote_command,
+            args={},
+        )
+        if bool(remote_result.get("ok")):
+            await self._answer_callback(query, reply_text)
             return
-        if query.data == PLAYER_PREVIOUS:
-            self._media_controller.previous_track()
-            await self._answer_callback(query, "Previous track")
-            return
-        if query.data == PLAYER_NEXT:
-            self._media_controller.next_track()
-            await self._answer_callback(query, "Next track")
-            return
+
+        remote_error = str(remote_result.get("message", "")).strip() or "Медиа-контроль недоступен."
+        await self._answer_callback(query, remote_error, show_alert=True)
+        return
     except Exception as exc:
         if query.data == PLAYER_OUTPUT_TOGGLE:
             await self._answer_callback(
@@ -85,8 +118,5 @@ async def handle_player_button(self, update: Update, context: ContextTypes.DEFAU
             )
             return
         await self._answer_callback(query, "Ошибка отправки клавиши.", show_alert=True)
-        return
-
-    await self._answer_callback(query, "Неизвестная кнопка.")
 
 

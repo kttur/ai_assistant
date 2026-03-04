@@ -36,6 +36,7 @@ pip-wheel-metadata/
 .env
 .env.*
 !.env.example
+.ai_assistant_remote_client_token.json
 
 # OS files
 .DS_Store
