@@ -26,6 +26,8 @@ from ai_assistant.modules.telegram.handler_constants import (
     SETTINGS_HOME,
 )
 from ai_assistant.modules.telegram.handler_types import PendingTextSettingInput as _PendingTextSettingInput
+from ai_assistant.providers.remote.remote_device_service import RemoteDeviceService
+from ai_assistant.providers.remote.ws_hub import RemoteWebSocketHub
 from ai_assistant.providers.i18n.file_translation_service import FileTranslationService
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,8 @@ class TelegramHandlers:
         permission_admin: PermissionAdminStore | None = None,
         admin_telegram_id: int | None = None,
         translation_service: TranslationService | None = None,
+        remote_device_service: RemoteDeviceService | None = None,
+        remote_ws_hub: RemoteWebSocketHub | None = None,
     ) -> None:
         self._assistant_service = assistant_service
         self._user_settings_store = user_settings_store
@@ -54,6 +58,8 @@ class TelegramHandlers:
         self._permission_checker = permission_checker
         self._permission_admin = permission_admin
         self._admin_telegram_id = admin_telegram_id
+        self._remote_device_service = remote_device_service
+        self._remote_ws_hub = remote_ws_hub
         self._translation_service = translation_service or FileTranslationService(
             default_locale="ru",
             fallback_locale="en",
@@ -61,9 +67,10 @@ class TelegramHandlers:
         self._terminal_mode_users: set[int] = set()
         self._pending_text_setting_inputs: dict[int, _PendingTextSettingInput] = {}
         logger.info(
-            "Telegram handlers initialized: admin_telegram_id=%s terminal_runtime=%s",
+            "Telegram handlers initialized: admin_telegram_id=%s terminal_runtime=%s remote_runtime=%s",
             self._admin_telegram_id,
             "enabled" if self._terminal_executor is not None else "disabled",
+            "enabled" if self._remote_device_service is not None else "disabled",
         )
 
 
@@ -119,6 +126,13 @@ from ai_assistant.modules.telegram.handler_methods import (
     handle_id,
     handle_mpc,
     handle_mpc_button,
+    handle_pc_default,
+    handle_pc_link,
+    handle_pc_list,
+    handle_pc_run,
+    handle_pc_share,
+    handle_pc_unlink,
+    handle_pc_unshare,
     handle_ping,
     handle_player,
     handle_player_button,
@@ -151,6 +165,13 @@ TelegramHandlers.handle_set_setting = handle_set_setting
 TelegramHandlers.handle_settings_raw = handle_settings_raw
 TelegramHandlers.handle_settings = handle_settings
 TelegramHandlers.handle_settings_callback = handle_settings_callback
+TelegramHandlers.handle_pc_link = handle_pc_link
+TelegramHandlers.handle_pc_list = handle_pc_list
+TelegramHandlers.handle_pc_default = handle_pc_default
+TelegramHandlers.handle_pc_run = handle_pc_run
+TelegramHandlers.handle_pc_share = handle_pc_share
+TelegramHandlers.handle_pc_unshare = handle_pc_unshare
+TelegramHandlers.handle_pc_unlink = handle_pc_unlink
 TelegramHandlers.handle_role_add = handle_role_add
 TelegramHandlers.handle_role_assign = handle_role_assign
 TelegramHandlers.handle_grant = handle_grant

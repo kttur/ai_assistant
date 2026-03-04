@@ -115,10 +115,15 @@ class PermissionAdminStore(PermissionChecker, Protocol):
 
 
 class AssistantCommandExecutor(Protocol):
-    def get_command_catalog(self) -> list[dict[str, object]]:
+    async def get_command_catalog(self, user_id: int | None = None) -> list[dict[str, object]]:
         ...
 
-    def execute_command(self, command: str, args: dict[str, object]) -> dict[str, object]:
+    async def execute_command(
+        self,
+        command: str,
+        args: dict[str, object],
+        user_id: int | None = None,
+    ) -> dict[str, object]:
         ...
 
 

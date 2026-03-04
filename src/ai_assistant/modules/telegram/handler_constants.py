@@ -88,6 +88,41 @@ START_COMMAND_HELP: tuple[dict[str, object], ...] = (
         "usage": "/mpc",
     },
     {
+        "name": "pc_link",
+        "description_key": "start.command.pc_link",
+        "usage": "/pc_link <one_time_code>",
+    },
+    {
+        "name": "pc_list",
+        "description_key": "start.command.pc_list",
+        "usage": "/pc_list",
+    },
+    {
+        "name": "pc_default",
+        "description_key": "start.command.pc_default",
+        "usage": "/pc_default <client_id|none>",
+    },
+    {
+        "name": "pc_run",
+        "description_key": "start.command.pc_run",
+        "usage": "/pc_run <command> [args_json]",
+    },
+    {
+        "name": "pc_share",
+        "description_key": "start.command.pc_share",
+        "usage": "/pc_share <client_id> <telegram_user_id>",
+    },
+    {
+        "name": "pc_unshare",
+        "description_key": "start.command.pc_unshare",
+        "usage": "/pc_unshare <client_id> <telegram_user_id>",
+    },
+    {
+        "name": "pc_unlink",
+        "description_key": "start.command.pc_unlink",
+        "usage": "/pc_unlink <client_id>",
+    },
+    {
         "name": "grant",
         "description_key": "start.command.grant",
         "usage": "/grant user <user_id> <type> <name> | /grant role <role_name> <type> <name>",

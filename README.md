@@ -14,7 +14,7 @@ Implemented:
 - base `src` skeleton split into `core / providers / modules`;
 - configuration via environment variables;
 - Telegram module based on `python-telegram-bot`;
-- Telegram test commands: `/start`, `/id`, `/ping`, `/echo`, `/ask`, `/clear`, `/set`, `/settings`, `/settings_raw`, `/terminal`, `/exit`, `/cancel`, `/player`, `/mpc`, `/grant`, `/revoke`, `/role_add`, `/role_assign`, `/user_roles`, `/user_permissions`;
+- Telegram test commands: `/start`, `/id`, `/ping`, `/echo`, `/ask`, `/clear`, `/set`, `/settings`, `/settings_raw`, `/terminal`, `/exit`, `/cancel`, `/player`, `/mpc`, `/pc_link`, `/pc_list`, `/pc_default`, `/pc_run`, `/pc_share`, `/pc_unshare`, `/pc_unlink`, `/grant`, `/revoke`, `/role_add`, `/role_assign`, `/user_roles`, `/user_permissions`;
 - MPC-HC control module (audio/subtitle next/prev, RU/EN selection);
 - Voicemeeter output toggle support (for example, `Strip(5).A1`) via `.env`;
 - terminal mode (powershell/wsl/cmd) with switching via `/terminal` and `/exit`;
@@ -94,6 +94,8 @@ These directories are intentionally excluded by generated map tooling to reduce 
 2. Install dependencies:
    - `pip install -e .`
    - for OpenAI/Anthropic: `pip install -e .[openai,anthropic]`
+   - for remote runtime (WebSocket server/client): `pip install -e .[remote]`
+   - for Postgres + remote runtime: `pip install -e .[postgres,remote]`
    - for development: `pip install -e .[dev]`
 3. Copy `.env.example` to `.env` and set `TELEGRAM_BOT_TOKEN`.
 4. Run:
@@ -160,8 +162,156 @@ For compose mode, app container overrides:
 - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME` - optional HTTP header name for Ollama authentication (for example, `Authorization`).
 - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE` - optional HTTP header value for Ollama authentication (for example, `Bearer <token>`).
 - `AI_ASSISTANT_OLLAMA_EXTRA_HEADERS_JSON` - optional JSON object with additional Ollama request headers (for example, `{"CF-Access-Client-Id":"...","CF-Access-Client-Secret":"..."}`).
+- `AI_ASSISTANT_REMOTE_ENABLED` - enable remote device runtime on server (`true|false`).
+- `AI_ASSISTANT_REMOTE_BACKEND` - remote device backend (`postgres`, `memory`).
+- `AI_ASSISTANT_REMOTE_SERVER_ID` - logical server id for device binding (must match client).
+- `AI_ASSISTANT_REMOTE_WS_HOST` - WebSocket bind host for remote hub.
+- `AI_ASSISTANT_REMOTE_WS_PORT` - WebSocket bind port for remote hub.
+- `AI_ASSISTANT_REMOTE_WS_PATH` - WebSocket path for remote hub (for example, `/ws/remote`).
+- `AI_ASSISTANT_REMOTE_TLS_CERT_PATH` - TLS cert path for remote hub (`wss`).
+- `AI_ASSISTANT_REMOTE_TLS_KEY_PATH` - TLS key path for remote hub (`wss`).
+- `AI_ASSISTANT_REMOTE_CLIENT_SERVER_URL` - server WebSocket URL used by Windows client (`ws://...` or `wss://...`).
+- `AI_ASSISTANT_REMOTE_CLIENT_NAME` - optional device display name for Telegram list.
+- `AI_ASSISTANT_REMOTE_CLIENT_ACTIVE_SKILLS` - active skill ids on remote client (CSV).
+- `AI_ASSISTANT_REMOTE_CLIENT_SKILL_FACTORIES` - custom remote skill factories (CSV `module[:function]`).
 
 For backward compatibility, legacy names `OPENAI_*` and `ANTHROPIC_*` are still supported.
+
+## Remote Management (Server + Windows Client)
+
+Remote management is built as a separate Windows agent connected to the main server via WebSocket.
+The Windows agent executes local skills, and the server exposes them to Telegram/LLM as `remote.<command>`.
+
+### Server Setup
+
+1. Install required extras:
+   - `pip install -e .[postgres,remote]`
+2. Configure server `.env`:
+   - `AI_ASSISTANT_REMOTE_ENABLED=true`
+   - `AI_ASSISTANT_REMOTE_BACKEND=postgres`
+   - `POSTGRES_DSN=postgresql://postgres:postgres@localhost:5432/ai_assistant`
+   - `AI_ASSISTANT_REMOTE_SERVER_ID=home`
+   - `AI_ASSISTANT_REMOTE_WS_HOST=0.0.0.0`
+   - `AI_ASSISTANT_REMOTE_WS_PORT=8765`
+   - `AI_ASSISTANT_REMOTE_WS_PATH=/ws/remote`
+3. Configure TLS for production (`wss`):
+   - `AI_ASSISTANT_REMOTE_TLS_CERT_PATH=<path-to-cert.pem>`
+   - `AI_ASSISTANT_REMOTE_TLS_KEY_PATH=<path-to-key.pem>`
+4. Start assistant server as usual (`python main.py`).
+
+### Windows Client Setup
+
+1. On Windows machine, install dependencies:
+   - `pip install -e .[remote]`
+2. Configure client `.env`:
+   - `AI_ASSISTANT_REMOTE_CLIENT_SERVER_URL=wss://<server-host>:8765/ws/remote`
+   - `AI_ASSISTANT_REMOTE_SERVER_ID=home` (must match server)
+   - `AI_ASSISTANT_REMOTE_CLIENT_NAME=My Windows PC` (optional)
+   - `AI_ASSISTANT_REMOTE_CLIENT_PLATFORM=windows`
+   - `AI_ASSISTANT_REMOTE_CLIENT_TOKEN_FILE=.ai_assistant_remote_client_token.json`
+3. Start client:
+   - `ai-assistant-remote-client`
+   - or `python -m ai_assistant.remote_client`
+
+### First Launch And Linking
+
+1. On first run, client prints a one-time code in terminal.
+2. Send this code in Telegram:
+   - `/pc_link <one_time_code>`
+3. Verify linked devices:
+   - `/pc_list`
+4. If user has multiple devices, set default:
+   - `/pc_default <client_id>`
+   - clear default: `/pc_default none`
+
+After successful linking, client stores auth token in `AI_ASSISTANT_REMOTE_CLIENT_TOKEN_FILE`.
+Next launches authenticate automatically without new code (until unlink).
+
+### Daily Use
+
+- Client keeps reconnecting automatically after network failures.
+- LLM receives remote tools as `remote.<command>` for linked online devices.
+- Manual execution from Telegram:
+  - `/pc_run media.play_pause`
+  - `/pc_run mpc.audio_set_language {"language":"ru"}`
+  - `/pc_run media.play_pause {"client_id":"<target-client-id>"}`
+
+### Sharing And Unlinking
+
+- Share full device access (owner only):
+  - `/pc_share <client_id> <telegram_user_id>`
+- Revoke shared access:
+  - `/pc_unshare <client_id> <telegram_user_id>`
+- Unlink device from server (owner only):
+  - `/pc_unlink <client_id>`
+
+Client-side local unlink (remove saved server link token):
+- `ai-assistant-remote-client --unlink`
+- or `python -m ai_assistant.remote_client --unlink`
+
+### Remote Skills: Enable/Disable Built-In
+
+Built-in skill ids:
+- `media`
+- `mpc`
+- `output`
+
+If active skill list is empty, all loaded skills are enabled.
+
+Server (local skills for main app):
+- `AI_ASSISTANT_ACTIVE_SKILLS=media,mpc,output`
+
+Windows client (skills exposed remotely):
+- `AI_ASSISTANT_REMOTE_CLIENT_ACTIVE_SKILLS=media,mpc`
+
+### Remote Skills: Add Custom Skills
+
+1. Create a Python module with factory `build_skill` (or custom function name).
+2. Factory signature:
+   - `factory(context: SystemSkillFactoryContext) -> ExecutableSkill | None`
+3. Register factory path in client env:
+   - `AI_ASSISTANT_REMOTE_CLIENT_SKILL_FACTORIES=your_module.path:build_skill`
+4. Optionally limit active skills:
+   - `AI_ASSISTANT_REMOTE_CLIENT_ACTIVE_SKILLS=media,your_skill_id`
+5. Restart client.
+6. For local server-side custom skills (non-remote), use:
+   - `AI_ASSISTANT_SKILL_FACTORIES=your_module.path:build_skill`
+
+Minimal example:
+
+```python
+from ai_assistant.providers.system.skills import SystemSkillFactoryContext
+from ai_assistant.skills.models import ExecutableSkill, SkillCommandSpec, SkillSpec
+
+
+def build_skill(context: SystemSkillFactoryContext) -> ExecutableSkill | None:
+    del context
+    spec = SkillSpec(
+        skill_id="demo",
+        title="Demo Skill",
+        llm_description="Simple custom remote skill example.",
+        commands=(
+            SkillCommandSpec(
+                command="demo.ping",
+                description="Return pong.",
+                args={},
+            ),
+        ),
+    )
+
+    def execute(command: str, args: dict[str, object]) -> dict[str, object]:
+        del args
+        if command == "demo.ping":
+            return {"ok": True, "message": "pong"}
+        return {"ok": False, "message": f"Unknown command: {command}"}
+
+    return ExecutableSkill(spec=spec, execute=execute)
+```
+
+Notes:
+- each `skill_id` must be unique;
+- each command name must be unique across all loaded skills;
+- remote commands are available as `remote.<command>` and checked by permission `assistant/remote.<command>`.
 
 ## Ollama
 
@@ -200,6 +350,8 @@ Supported commands:
 - `output.disable`
 - `output.toggle`
 - `output.status`
+
+When remote runtime is enabled and linked devices are online, remote tools are additionally exposed as `remote.<command>` (for example, `remote.media.play_pause`).
 
 ## Voicemeeter Output
 
@@ -292,6 +444,7 @@ Applied checks:
 - Telegram command `/X` execution: `command/X`
 - AI chat (regular text and `/ask`): `general/assistant`
 - AI tool command to system (for example `media.play_pause`): `assistant/<action>`
+- AI remote tool command (for example `remote.media.play_pause`): `assistant/remote.<action>`
 - LLM provider selection: `assistant/llm.provider.<provider>`
 - LLM model selection: `assistant/llm.model.<provider>:<model>`
 

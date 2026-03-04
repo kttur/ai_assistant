@@ -54,6 +54,13 @@ Each Telegram command requires `command/<name>`:
 - `command/cancel`
 - `command/player`
 - `command/mpc`
+- `command/pc_link`
+- `command/pc_list`
+- `command/pc_default`
+- `command/pc_run`
+- `command/pc_share`
+- `command/pc_unshare`
+- `command/pc_unlink`
 - `command/grant`
 - `command/revoke`
 - `command/role_add`
@@ -72,7 +79,7 @@ Notes:
 
 LLM tools are checked as `assistant/<action_name>`, where `action_name` is the exact command name from the tool catalog.
 
-Current set (depends on connected controllers):
+Current local set (depends on connected controllers):
 
 - `assistant/media.play_pause`
 - `assistant/media.previous_track`
@@ -90,7 +97,12 @@ Current set (depends on connected controllers):
 - `assistant/llm.provider.<provider>` (for example, `assistant/llm.provider.openai`, `assistant/llm.provider.ollama`)
 - `assistant/llm.model.<provider>:<model>` (for example, `assistant/llm.model.openai:gpt-4.1-mini`, `assistant/llm.model.ollama:llama3.1`)
 
-If the corresponding controller is not connected, the command is not included in the available LLM catalog.
+Remote tools (when user has linked online devices) are exposed as `remote.<command>` and checked as:
+
+- `assistant/remote.<command>`
+- example: `assistant/remote.media.play_pause`
+
+If the corresponding controller/client is not connected, the command is not included in the available LLM catalog.
 
 For LLM selection in `/settings`:
 

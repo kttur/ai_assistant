@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 
 from ai_assistant.core.service import AssistantService
@@ -27,9 +29,10 @@ class SequencedLLMProvider:
 
 class FakeCommandExecutor:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, dict[str, object]]] = []
+        self.calls: list[tuple[int | None, str, dict[str, object]]] = []
 
-    def get_command_catalog(self) -> list[dict[str, object]]:
+    async def get_command_catalog(self, user_id: int | None = None) -> list[dict[str, object]]:
+        del user_id
         return [
             {
                 "command": "media.play_pause",
@@ -38,8 +41,13 @@ class FakeCommandExecutor:
             }
         ]
 
-    def execute_command(self, command: str, args: dict[str, object]) -> dict[str, object]:
-        self.calls.append((command, args))
+    async def execute_command(
+        self,
+        command: str,
+        args: dict[str, object],
+        user_id: int | None = None,
+    ) -> dict[str, object]:
+        self.calls.append((user_id, command, args))
         return {"ok": True, "message": "Playback toggled."}
 
 
@@ -65,11 +73,7 @@ class FakeUserSettingsStore:
         return self.values.get((user_id, key))
 
     async def get_all_settings(self, user_id: int) -> dict[str, str]:
-        return {
-            k: v
-            for (uid, k), v in self.values.items()
-            if uid == user_id
-        }
+        return {k: v for (uid, k), v in self.values.items() if uid == user_id}
 
     async def get_setting_definitions(self, locale: str | None = None):
         del locale
@@ -120,7 +124,7 @@ def test_service_executes_tool_call_and_requests_final_answer() -> None:
     reply = asyncio.run(service.process_text(user_id=21, text="pause music"))
 
     assert reply.text == "Done. Playback toggled."
-    assert executor.calls == [("media.play_pause", {})]
+    assert executor.calls == [(21, "media.play_pause", {})]
     assert len(llm.prompts) == 2
     assert "Available commands JSON" in llm.prompts[0]
     assert "Результаты выполнения команд" in llm.prompts[1]
@@ -177,9 +181,7 @@ def test_service_filters_catalog_by_assistant_permissions() -> None:
     )
     store = InMemoryStore()
     executor = FakeCommandExecutor()
-    permission_checker = FakePermissionChecker(
-        allowed={(88, "assistant", "media.play_pause")}
-    )
+    permission_checker = FakePermissionChecker(allowed={(88, "assistant", "media.play_pause")})
     service = AssistantService(
         llm_provider=llm,
         memory_store=store,
@@ -214,4 +216,4 @@ def test_admin_telegram_id_bypasses_assistant_permissions() -> None:
     reply = asyncio.run(service.process_text(user_id=999, text="pause music"))
 
     assert reply.text == "Done for admin."
-    assert executor.calls == [("media.play_pause", {})]
+    assert executor.calls == [(999, "media.play_pause", {})]

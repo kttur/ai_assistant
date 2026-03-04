@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 
 from ai_assistant.bootstrap_infra import (
     build_media_controller,
     build_mpc_controller,
     build_output_controller,
     build_permission_checker,
+    build_remote_device_service,
+    build_remote_ws_hub,
     build_terminal_executor,
     build_translation_service,
     build_user_settings_store,
@@ -24,6 +27,7 @@ from ai_assistant.modules.telegram.bot import TelegramBotModule
 from ai_assistant.modules.telegram.handlers import TelegramHandlers
 from ai_assistant.providers.memory.in_memory_store import InMemoryStore
 from ai_assistant.providers.system.assistant_command_executor import SystemAssistantCommandExecutor
+from ai_assistant.providers.system.hybrid_command_executor import HybridAssistantCommandExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +68,21 @@ def build_channel_module(settings: Settings) -> ChannelModule:
     mpc_controller = build_mpc_controller()
     output_controller = build_output_controller(settings)
     terminal_executor = build_terminal_executor(settings)
-    command_executor = SystemAssistantCommandExecutor(
+    remote_device_service = build_remote_device_service(settings)
+    remote_ws_hub = build_remote_ws_hub(settings, remote_device_service)
+
+    local_command_executor = SystemAssistantCommandExecutor(
         media_controller=media_controller,
         mpc_controller=mpc_controller,
         output_controller=output_controller,
+        active_skill_ids=settings.assistant_active_skills,
+        skill_factories=settings.assistant_skill_factories,
     )
+    command_executor = HybridAssistantCommandExecutor(
+        local_executor=local_command_executor,
+        remote_ws_hub=remote_ws_hub,
+    )
+
     assistant_service = AssistantService(
         llm_provider=llm_provider,
         memory_store=memory_store,
@@ -92,10 +106,19 @@ def build_channel_module(settings: Settings) -> ChannelModule:
             permission_admin=permission_checker,
             admin_telegram_id=settings.admin_telegram_id,
             translation_service=translation_service,
+            remote_device_service=remote_device_service,
+            remote_ws_hub=remote_ws_hub,
         )
+        startup_hooks: tuple[Callable[[], Awaitable[None]], ...] = ()
+        shutdown_hooks: tuple[Callable[[], Awaitable[None]], ...] = ()
+        if remote_ws_hub is not None:
+            startup_hooks = (remote_ws_hub.start,)
+            shutdown_hooks = (remote_ws_hub.stop,)
         return TelegramBotModule(
             token=settings.telegram_bot_token,
             handlers=handlers,
+            startup_hooks=startup_hooks,
+            shutdown_hooks=shutdown_hooks,
         )
     logger.error("Unsupported assistant channel requested: %s", settings.assistant_channel)
     raise ValueError(f"Unsupported channel: {settings.assistant_channel}")

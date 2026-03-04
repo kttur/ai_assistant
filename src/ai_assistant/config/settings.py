@@ -22,6 +22,10 @@ def _parse_csv(value: str) -> tuple[str, ...]:
     return tuple(items)
 
 
+def _parse_bool(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _get_first_env(*names: str, default: str) -> str:
     for name in names:
         value = getenv(name)
@@ -53,6 +57,31 @@ class Settings:
     audio_output_backend: str
     terminal_shell: str
     terminal_timeout_seconds: int
+    assistant_active_skills: tuple[str, ...]
+    assistant_skill_factories: tuple[str, ...]
+    remote_enabled: bool
+    remote_backend: str
+    remote_server_id: str
+    remote_ws_host: str
+    remote_ws_port: int
+    remote_ws_path: str
+    remote_ws_public_url: str
+    remote_tls_cert_path: str
+    remote_tls_key_path: str
+    remote_link_code_ttl_seconds: int
+    remote_request_timeout_seconds: float
+    remote_ping_interval_seconds: float
+    remote_ping_timeout_seconds: float
+    remote_client_server_url: str
+    remote_client_name: str
+    remote_client_platform: str
+    remote_client_token_file: str
+    remote_client_active_skills: tuple[str, ...]
+    remote_client_skill_factories: tuple[str, ...]
+    remote_client_reconnect_min_seconds: float
+    remote_client_reconnect_max_seconds: float
+    remote_client_ping_interval_seconds: float
+    remote_client_ping_timeout_seconds: float
     voicemeeter_strip_index: int
     voicemeeter_bus: str
     voicemeeter_output_param: str
@@ -104,6 +133,7 @@ class Settings:
             )
         )
         ollama_model = getenv("OLLAMA_MODEL", "llama3.1")
+
         return cls(
             assistant_channel=getenv("ASSISTANT_CHANNEL", "telegram"),
             llm_provider=getenv("LLM_PROVIDER", "mock"),
@@ -168,6 +198,54 @@ class Settings:
             audio_output_backend=getenv("AUDIO_OUTPUT_BACKEND", "none"),
             terminal_shell=getenv("TERMINAL_SHELL", "powershell"),
             terminal_timeout_seconds=int(getenv("TERMINAL_TIMEOUT_SECONDS", "60")),
+            assistant_active_skills=_parse_csv(getenv("AI_ASSISTANT_ACTIVE_SKILLS", "")),
+            assistant_skill_factories=_parse_csv(getenv("AI_ASSISTANT_SKILL_FACTORIES", "")),
+            remote_enabled=_parse_bool(getenv("AI_ASSISTANT_REMOTE_ENABLED", "false")),
+            remote_backend=getenv("AI_ASSISTANT_REMOTE_BACKEND", "postgres"),
+            remote_server_id=getenv("AI_ASSISTANT_REMOTE_SERVER_ID", "default"),
+            remote_ws_host=getenv("AI_ASSISTANT_REMOTE_WS_HOST", "0.0.0.0"),
+            remote_ws_port=int(getenv("AI_ASSISTANT_REMOTE_WS_PORT", "8765")),
+            remote_ws_path=getenv("AI_ASSISTANT_REMOTE_WS_PATH", "/ws/remote"),
+            remote_ws_public_url=getenv("AI_ASSISTANT_REMOTE_WS_PUBLIC_URL", ""),
+            remote_tls_cert_path=getenv("AI_ASSISTANT_REMOTE_TLS_CERT_PATH", ""),
+            remote_tls_key_path=getenv("AI_ASSISTANT_REMOTE_TLS_KEY_PATH", ""),
+            remote_link_code_ttl_seconds=int(
+                getenv("AI_ASSISTANT_REMOTE_LINK_CODE_TTL_SECONDS", "300")
+            ),
+            remote_request_timeout_seconds=float(
+                getenv("AI_ASSISTANT_REMOTE_REQUEST_TIMEOUT_SECONDS", "20")
+            ),
+            remote_ping_interval_seconds=float(
+                getenv("AI_ASSISTANT_REMOTE_PING_INTERVAL_SECONDS", "20")
+            ),
+            remote_ping_timeout_seconds=float(
+                getenv("AI_ASSISTANT_REMOTE_PING_TIMEOUT_SECONDS", "20")
+            ),
+            remote_client_server_url=getenv("AI_ASSISTANT_REMOTE_CLIENT_SERVER_URL", ""),
+            remote_client_name=getenv("AI_ASSISTANT_REMOTE_CLIENT_NAME", ""),
+            remote_client_platform=getenv("AI_ASSISTANT_REMOTE_CLIENT_PLATFORM", "windows"),
+            remote_client_token_file=getenv(
+                "AI_ASSISTANT_REMOTE_CLIENT_TOKEN_FILE",
+                ".ai_assistant_remote_client_token.json",
+            ),
+            remote_client_active_skills=_parse_csv(
+                getenv("AI_ASSISTANT_REMOTE_CLIENT_ACTIVE_SKILLS", "")
+            ),
+            remote_client_skill_factories=_parse_csv(
+                getenv("AI_ASSISTANT_REMOTE_CLIENT_SKILL_FACTORIES", "")
+            ),
+            remote_client_reconnect_min_seconds=float(
+                getenv("AI_ASSISTANT_REMOTE_CLIENT_RECONNECT_MIN_SECONDS", "1")
+            ),
+            remote_client_reconnect_max_seconds=float(
+                getenv("AI_ASSISTANT_REMOTE_CLIENT_RECONNECT_MAX_SECONDS", "30")
+            ),
+            remote_client_ping_interval_seconds=float(
+                getenv("AI_ASSISTANT_REMOTE_CLIENT_PING_INTERVAL_SECONDS", "20")
+            ),
+            remote_client_ping_timeout_seconds=float(
+                getenv("AI_ASSISTANT_REMOTE_CLIENT_PING_TIMEOUT_SECONDS", "20")
+            ),
             voicemeeter_strip_index=int(getenv("VOICEMEETER_STRIP_INDEX", "5")),
             voicemeeter_bus=getenv("VOICEMEETER_BUS", "A1"),
             voicemeeter_output_param=getenv("VOICEMEETER_OUTPUT_PARAM", ""),

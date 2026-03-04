@@ -70,6 +70,8 @@ class FakeOutputController:
 
 
 def test_command_executor_catalog_and_execution() -> None:
+    import asyncio
+
     media = FakeMediaController()
     mpc = FakeMpcController()
     output = FakeOutputController()
@@ -79,15 +81,15 @@ def test_command_executor_catalog_and_execution() -> None:
         output_controller=output,
     )
 
-    catalog = executor.get_command_catalog()
+    catalog = asyncio.run(executor.get_command_catalog())
     commands = {item["command"] for item in catalog}
     assert "media.play_pause" in commands
     assert "mpc.audio_set_language" in commands
     assert "output.toggle" in commands
 
-    media_result = executor.execute_command("media.next_track", {})
-    mpc_result = executor.execute_command("mpc.audio_set_language", {"language": "ru"})
-    output_result = executor.execute_command("output.toggle", {})
+    media_result = asyncio.run(executor.execute_command("media.next_track", {}))
+    mpc_result = asyncio.run(executor.execute_command("mpc.audio_set_language", {"language": "ru"}))
+    output_result = asyncio.run(executor.execute_command("output.toggle", {}))
 
     assert media_result["ok"] is True
     assert mpc_result["ok"] is True

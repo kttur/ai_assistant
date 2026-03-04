@@ -26,6 +26,8 @@ ai_assistant
 │   ├── build_mpc_controller.py
 │   ├── build_output_controller.py
 │   ├── build_permission_checker.py
+│   ├── build_remote_device_service.py
+│   ├── build_remote_ws_hub.py
 │   ├── build_terminal_executor.py
 │   ├── build_translation_service.py
 │   └── build_user_settings_store.py
@@ -124,6 +126,13 @@ ai_assistant
 │   │   │   ├── handle_id.py
 │   │   │   ├── handle_mpc.py
 │   │   │   ├── handle_mpc_button.py
+│   │   │   ├── handle_pc_default.py
+│   │   │   ├── handle_pc_link.py
+│   │   │   ├── handle_pc_list.py
+│   │   │   ├── handle_pc_run.py
+│   │   │   ├── handle_pc_share.py
+│   │   │   ├── handle_pc_unlink.py
+│   │   │   ├── handle_pc_unshare.py
 │   │   │   ├── handle_ping.py
 │   │   │   ├── handle_player.py
 │   │   │   ├── handle_player_button.py
@@ -170,6 +179,16 @@ ai_assistant
 │   │   ├── postgres_permission_checker.py
 │   │   ├── postgres_permission_checker_helpers.py
 │   │   └── postgres_permission_checker_sql.py
+│   ├── remote
+│   │   ├── __init__.py
+│   │   ├── in_memory_remote_device_store.py
+│   │   ├── interfaces.py
+│   │   ├── postgres_remote_device_store.py
+│   │   ├── postgres_remote_device_store_sql.py
+│   │   ├── remote_device_service.py
+│   │   ├── types.py
+│   │   ├── ws_hub.py
+│   │   └── ws_protocol.py
 │   ├── settings
 │   │   ├── __init__.py
 │   │   ├── in_memory_user_settings_store.py
@@ -178,8 +197,15 @@ ai_assistant
 │   │   ├── postgres_user_settings_sql.py
 │   │   └── postgres_user_settings_store.py
 │   ├── system
+│   │   ├── skills
+│   │   │   ├── __init__.py
+│   │   │   ├── custom_skill_loader.py
+│   │   │   ├── media_skill.py
+│   │   │   ├── mpc_skill.py
+│   │   │   └── output_skill.py
 │   │   ├── __init__.py
 │   │   ├── assistant_command_executor.py
+│   │   ├── hybrid_command_executor.py
 │   │   ├── media_controller.py
 │   │   ├── mpc_hc_controller.py
 │   │   └── voicemeeter_output_controller.py
@@ -191,10 +217,21 @@ ai_assistant
 │   │   ├── shell_terminal_session.py
 │   │   └── shell_terminal_types.py
 │   └── __init__.py
+├── remote_client
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── agent.py
+│   ├── app.py
+│   └── state_store.py
 ├── resources
 │   └── i18n
 │       ├── en.json
 │       └── ru.json
+├── skills
+│   ├── __init__.py
+│   ├── executor.py
+│   ├── models.py
+│   └── registry.py
 ├── __init__.py
 ├── __main__.py
 ├── app.py
@@ -222,6 +259,7 @@ tests
 │       ├── test_handlers_basic.py
 │       ├── test_handlers_media.py
 │       ├── test_handlers_permissions.py
+│       ├── test_handlers_remote.py
 │       └── test_handlers_settings.py
 └── providers
     ├── llm
@@ -234,10 +272,14 @@ tests
     │   └── test_user_selectable_provider.py
     ├── permissions
     │   └── test_in_memory_permission_checker.py
+    ├── remote
+    │   └── test_remote_device_service.py
     ├── settings
     │   └── test_in_memory_user_settings_store.py
     ├── system
     │   ├── test_assistant_command_executor.py
+    │   ├── test_hybrid_command_executor.py
+    │   ├── test_system_skill_filter.py
     │   └── test_voicemeeter_output_controller.py
     └── terminal
         └── test_shell_terminal_executor.py
@@ -269,20 +311,20 @@ context
 ## Largest Python Files in `src`
 
 - `src\ai_assistant\providers\llm\user_selectable_provider.py`: 992 lines
-- `src\ai_assistant\core\service.py`: 368 lines
+- `src\ai_assistant\providers\remote\ws_hub.py`: 518 lines
+- `src\ai_assistant\core\service.py`: 372 lines
+- `src\ai_assistant\providers\remote\postgres_remote_device_store.py`: 324 lines
 - `src\ai_assistant\modules\telegram\handler_methods\handle_settings_callback.py`: 308 lines
+- `src\ai_assistant\config\settings.py`: 303 lines
 - `src\ai_assistant\providers\system\voicemeeter_output_controller.py`: 263 lines
 - `src\ai_assistant\providers\system\mpc_hc_controller.py`: 258 lines
 - `src\ai_assistant\providers\llm\auto_router.py`: 257 lines
 - `src\ai_assistant\providers\permissions\postgres_permission_checker.py`: 253 lines
+- `src\ai_assistant\providers\remote\remote_device_service.py`: 233 lines
 - `src\ai_assistant\providers\settings\in_memory_user_settings_store.py`: 232 lines
-- `src\ai_assistant\config\settings.py`: 225 lines
+- `src\ai_assistant\modules\telegram\handlers.py`: 224 lines
 - `src\ai_assistant\devtools\sync_docs.py`: 223 lines
 - `src\ai_assistant\providers\terminal\shell_terminal_interactive.py`: 222 lines
-- `src\ai_assistant\modules\telegram\handlers.py`: 203 lines
-- `src\ai_assistant\providers\permissions\in_memory_permission_checker.py`: 202 lines
-- `src\ai_assistant\providers\terminal\shell_terminal_executor.py`: 194 lines
-- `src\ai_assistant\providers\system\assistant_command_executor.py`: 192 lines
 
 ## Largest Python Files in `tests`
 
@@ -291,11 +333,11 @@ context
 - `tests\modules\telegram\_shared.py`: 341 lines
 - `tests\modules\telegram\test_handlers_basic.py`: 334 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
-- `tests\core\test_assistant_service.py`: 217 lines
+- `tests\core\test_assistant_service.py`: 219 lines
+- `tests\config\test_settings.py`: 209 lines
 - `tests\providers\llm\test_ollama_provider.py`: 184 lines
-- `tests\config\test_settings.py`: 182 lines
+- `tests\modules\telegram\test_handlers_remote.py`: 170 lines
 - `tests\providers\llm\test_auto_router.py`: 157 lines
-- `tests\modules\telegram\test_handlers_media.py`: 136 lines
 
 ## Notes for LLM Agents
 

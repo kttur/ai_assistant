@@ -18,6 +18,14 @@
 - If you add, remove, or rename any environment variable used by the app, update `.env.example` in the same change.
 - Keep default values and comments in `.env.example` aligned with `src/ai_assistant/config/settings.py`.
 
+## Python Execution Rule
+
+- If `.venv` exists in the repository root, run Python tools via this environment.
+- Prefer:
+  - `.venv\Scripts\python.exe -m ...` on Windows
+  - `.venv/bin/python -m ...` on Unix-like systems
+- Applies to commands such as `pytest`, `sync_docs`, and other project Python entry points.
+
 ## Priority Sources
 
 - Project map: `docs/PROJECT_MAP.md` (auto-generated).

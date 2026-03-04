@@ -112,7 +112,11 @@ class AssistantService:
                     )
                     continue
                 try:
-                    execution = self._command_executor.execute_command(call.command, call.args)
+                    execution = await self._command_executor.execute_command(
+                        command=call.command,
+                        args=call.args,
+                        user_id=user_id,
+                    )
                 except Exception as exc:
                     logger.warning(
                         "Tool call failed: user_id=%s command=%s error=%s",
@@ -222,7 +226,7 @@ class AssistantService:
         if not self._command_executor:
             return []
 
-        all_commands = self._command_executor.get_command_catalog()
+        all_commands = await self._command_executor.get_command_catalog(user_id=user_id)
         if not self._permission_checker:
             return all_commands
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 from telegram.ext import (
     Application,
@@ -18,15 +19,28 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramBotModule:
-    def __init__(self, token: str, handlers: TelegramHandlers) -> None:
+    def __init__(
+        self,
+        token: str,
+        handlers: TelegramHandlers,
+        startup_hooks: tuple[Callable[[], Awaitable[None]], ...] = (),
+        shutdown_hooks: tuple[Callable[[], Awaitable[None]], ...] = (),
+    ) -> None:
         if not token:
             raise ValueError("TELEGRAM_BOT_TOKEN is required for telegram channel.")
         self._token = token
         self._handlers = handlers
+        self._startup_hooks = startup_hooks
+        self._shutdown_hooks = shutdown_hooks
 
     def _build_application(self) -> Application:
         logger.debug("Building Telegram application handlers.")
-        application = ApplicationBuilder().token(self._token).build()
+        builder = ApplicationBuilder().token(self._token)
+        if self._startup_hooks:
+            builder = builder.post_init(self._post_init)
+        if self._shutdown_hooks:
+            builder = builder.post_shutdown(self._post_shutdown)
+        application = builder.build()
         application.add_handler(CommandHandler("start", self._handlers.handle_start))
         application.add_handler(CommandHandler("id", self._handlers.handle_id))
         application.add_handler(CommandHandler("ping", self._handlers.handle_ping))
@@ -40,7 +54,9 @@ class TelegramBotModule:
         application.add_handler(CommandHandler("revoke", self._handlers.handle_revoke))
         application.add_handler(CommandHandler("role_add", self._handlers.handle_role_add))
         application.add_handler(CommandHandler("role_assign", self._handlers.handle_role_assign))
-        application.add_handler(CommandHandler("user_roles", self._handlers.handle_user_roles))
+        application.add_handler(
+            CommandHandler("user_roles", self._handlers.handle_user_roles)
+        )
         application.add_handler(
             CommandHandler("user_permissions", self._handlers.handle_user_permissions)
         )
@@ -49,6 +65,13 @@ class TelegramBotModule:
         application.add_handler(CommandHandler("cancel", self._handlers.handle_cancel))
         application.add_handler(CommandHandler("player", self._handlers.handle_player))
         application.add_handler(CommandHandler("mpc", self._handlers.handle_mpc))
+        application.add_handler(CommandHandler("pc_link", self._handlers.handle_pc_link))
+        application.add_handler(CommandHandler("pc_list", self._handlers.handle_pc_list))
+        application.add_handler(CommandHandler("pc_default", self._handlers.handle_pc_default))
+        application.add_handler(CommandHandler("pc_run", self._handlers.handle_pc_run))
+        application.add_handler(CommandHandler("pc_share", self._handlers.handle_pc_share))
+        application.add_handler(CommandHandler("pc_unshare", self._handlers.handle_pc_unshare))
+        application.add_handler(CommandHandler("pc_unlink", self._handlers.handle_pc_unlink))
         application.add_handler(
             MessageHandler(filters.TEXT & ~filters.COMMAND, self._handlers.handle_text_message)
         )
@@ -62,6 +85,16 @@ class TelegramBotModule:
             CallbackQueryHandler(self._handlers.handle_settings_callback, pattern=r"^settings:")
         )
         return application
+
+    async def _post_init(self, application: Application) -> None:
+        del application
+        for hook in self._startup_hooks:
+            await hook()
+
+    async def _post_shutdown(self, application: Application) -> None:
+        del application
+        for hook in self._shutdown_hooks:
+            await hook()
 
     def run(self) -> None:
         # Python 3.14 no longer creates an implicit current loop in main thread.

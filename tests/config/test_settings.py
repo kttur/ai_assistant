@@ -164,6 +164,33 @@ def test_from_env_reads_ollama_auth_header_settings(monkeypatch) -> None:
     )
 
 
+def test_from_env_reads_remote_settings(monkeypatch) -> None:
+    monkeypatch.setattr("ai_assistant.config.settings.load_dotenv", lambda override=False: None)
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_ENABLED", "true")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_BACKEND", "postgres")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_SERVER_ID", "home")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_WS_HOST", "127.0.0.1")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_WS_PORT", "9443")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_WS_PATH", "/ws/pc")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_LINK_CODE_TTL_SECONDS", "120")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_REQUEST_TIMEOUT_SECONDS", "9")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_PING_INTERVAL_SECONDS", "15")
+    monkeypatch.setenv("AI_ASSISTANT_REMOTE_PING_TIMEOUT_SECONDS", "7")
+
+    settings = Settings.from_env()
+
+    assert settings.remote_enabled is True
+    assert settings.remote_backend == "postgres"
+    assert settings.remote_server_id == "home"
+    assert settings.remote_ws_host == "127.0.0.1"
+    assert settings.remote_ws_port == 9443
+    assert settings.remote_ws_path == "/ws/pc"
+    assert settings.remote_link_code_ttl_seconds == 120
+    assert settings.remote_request_timeout_seconds == 9
+    assert settings.remote_ping_interval_seconds == 15
+    assert settings.remote_ping_timeout_seconds == 7
+
+
 def test_from_env_keeps_anthropic_legacy_fallback(monkeypatch) -> None:
     monkeypatch.setattr("ai_assistant.config.settings.load_dotenv", lambda override=False: None)
     _clear_anthropic_env(monkeypatch)

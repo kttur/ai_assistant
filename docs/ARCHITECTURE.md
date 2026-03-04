@@ -8,7 +8,9 @@ Home AI assistant with pluggable channels, LLM providers, settings backends, and
 
 - `core/`: domain models, interfaces, and orchestration (`AssistantService`).
 - `providers/`: infrastructure adapters (LLM, settings storage, permissions, terminal, system control).
+- `skills/`: declarative skill contracts (metadata + commands) and execution registry.
 - `modules/`: transport/channel implementations (currently Telegram).
+- `remote_client/`: standalone Windows agent for remote skill execution over WebSocket.
 - `config/`: environment parsing and runtime settings.
 - `bootstrap*`: composition root and dependency wiring.
 
@@ -17,6 +19,9 @@ Home AI assistant with pluggable channels, LLM providers, settings backends, and
 - Main composition entry: `src/ai_assistant/bootstrap.py`.
 - LLM wiring: `src/ai_assistant/bootstrap_llm/`.
 - Infra wiring: `src/ai_assistant/bootstrap_infra/`.
+- Remote runtime wiring:
+  - `src/ai_assistant/bootstrap_infra/build_remote_device_service.py`
+  - `src/ai_assistant/bootstrap_infra/build_remote_ws_hub.py`
 
 ## Telegram Module Structure
 

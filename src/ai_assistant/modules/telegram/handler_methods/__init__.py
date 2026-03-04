@@ -13,6 +13,13 @@ from ai_assistant.modules.telegram.handler_methods.handle_grant import handle_gr
 from ai_assistant.modules.telegram.handler_methods.handle_id import handle_id
 from ai_assistant.modules.telegram.handler_methods.handle_mpc_button import handle_mpc_button
 from ai_assistant.modules.telegram.handler_methods.handle_mpc import handle_mpc
+from ai_assistant.modules.telegram.handler_methods.handle_pc_default import handle_pc_default
+from ai_assistant.modules.telegram.handler_methods.handle_pc_link import handle_pc_link
+from ai_assistant.modules.telegram.handler_methods.handle_pc_list import handle_pc_list
+from ai_assistant.modules.telegram.handler_methods.handle_pc_run import handle_pc_run
+from ai_assistant.modules.telegram.handler_methods.handle_pc_share import handle_pc_share
+from ai_assistant.modules.telegram.handler_methods.handle_pc_unlink import handle_pc_unlink
+from ai_assistant.modules.telegram.handler_methods.handle_pc_unshare import handle_pc_unshare
 from ai_assistant.modules.telegram.handler_methods.handle_ping import handle_ping
 from ai_assistant.modules.telegram.handler_methods.handle_player_button import handle_player_button
 from ai_assistant.modules.telegram.handler_methods.handle_player import handle_player
@@ -43,6 +50,13 @@ __all__ = [
     "handle_id",
     "handle_mpc_button",
     "handle_mpc",
+    "handle_pc_default",
+    "handle_pc_link",
+    "handle_pc_list",
+    "handle_pc_run",
+    "handle_pc_share",
+    "handle_pc_unlink",
+    "handle_pc_unshare",
     "handle_ping",
     "handle_player_button",
     "handle_player",

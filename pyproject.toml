@@ -19,12 +19,14 @@ dependencies = [
 
 [project.scripts]
 ai-assistant-sync-docs = "ai_assistant.devtools.sync_docs:main"
+ai-assistant-remote-client = "ai_assistant.remote_client.app:run"
 
 [project.optional-dependencies]
 openai = ["openai>=1.55.0"]
 anthropic = ["anthropic>=0.39.0"]
 ollama = ["httpx>=0.27.0,<1.0.0"]
 postgres = ["psycopg[binary]>=3.2.0,<4"]
+remote = ["websockets>=12,<16"]
 dev = ["pytest>=8.3.0"]
 
 [tool.setuptools]
