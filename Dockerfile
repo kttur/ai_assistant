@@ -14,7 +14,8 @@ RUN pip install --no-cache-dir --upgrade pip \
         "openai>=1.55.0" \
         "anthropic>=0.39.0" \
         "httpx>=0.27.0,<1.0.0" \
-        "psycopg[binary]>=3.2.0,<4"
+        "psycopg[binary]>=3.2.0,<4" \
+        "websockets>=12,<16"
 
 COPY src ./src
 COPY main.py ./
