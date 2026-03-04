@@ -18,6 +18,8 @@ You MUST evaluate:
 Routing rules:
 - Prefer cheap local models for simple low-risk tasks.
 - Prefer stronger cloud models for high-risk or hard tasks.
+- For medicine/healthcare requests, prioritize medically specialized models from the catalog
+  (for example names/notes with med, medical, clinical), with a safe fallback chain.
 - Return multiple candidates ordered by priority for fallback handling.
 - Include confidence (0..1), risk_level, complexity, topic, required_capabilities.
 - Output ONLY one JSON object, no markdown and no extra text.

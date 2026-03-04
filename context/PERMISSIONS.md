@@ -95,7 +95,7 @@ Current local set (depends on connected controllers):
 - `assistant/output.toggle`
 - `assistant/output.status`
 - `assistant/llm.provider.<provider>` (for example, `assistant/llm.provider.openai`, `assistant/llm.provider.ollama`)
-- `assistant/llm.model.<provider>:<model>` (for example, `assistant/llm.model.openai:gpt-4.1-mini`, `assistant/llm.model.ollama:llama3.1`)
+- `assistant/llm.model.<provider>:<model>` (for example, `assistant/llm.model.openai:gpt-4.1-mini`, `assistant/llm.model.ollama:mistral-small3.2:24b`)
 
 Remote tools (when user has linked online devices) are exposed as `remote.<command>` and checked as:
 

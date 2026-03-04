@@ -381,7 +381,7 @@ class UserSelectableLLMProvider:
                         model=model,
                         platform=self._provider_platform(provider),
                         cost_tier=self._model_cost_tier(provider=provider, model=model),
-                        notes=self._catalog_notes(provider=provider),
+                        notes=self._catalog_notes(provider=provider, model=model),
                     )
                 )
         logger.debug(
@@ -903,9 +903,12 @@ class UserSelectableLLMProvider:
         return "cloud"
 
     @staticmethod
-    def _catalog_notes(provider: str) -> str:
+    def _catalog_notes(provider: str, model: str) -> str:
+        normalized_model = model.strip().lower()
         if provider == "ollama":
-            return "local privacy-first runtime"
+            if any(token in normalized_model for token in ("medgemma", "medical", "clinical", "health")):
+                return "local medical-specialist runtime"
+            return "local general-purpose runtime"
         if provider == "mock":
             return "testing backend"
         if provider in {"openai", "anthropic"}:
@@ -916,7 +919,7 @@ class UserSelectableLLMProvider:
     def _model_cost_tier(provider: str, model: str) -> str:
         normalized = model.strip().lower()
         if provider in _LOCAL_PROVIDER_NAMES:
-            if any(token in normalized for token in ("70b", "32b", "34b", "large")):
+            if any(token in normalized for token in ("70b", "34b", "32b", "27b", "24b", "large")):
                 return "balanced_local"
             return "cheap_local"
 

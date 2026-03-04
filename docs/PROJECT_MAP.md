@@ -310,7 +310,7 @@ context
 
 ## Largest Python Files in `src`
 
-- `src\ai_assistant\providers\llm\user_selectable_provider.py`: 992 lines
+- `src\ai_assistant\providers\llm\user_selectable_provider.py`: 995 lines
 - `src\ai_assistant\providers\remote\ws_hub.py`: 518 lines
 - `src\ai_assistant\core\service.py`: 372 lines
 - `src\ai_assistant\providers\remote\postgres_remote_device_store.py`: 324 lines
@@ -328,7 +328,7 @@ context
 
 ## Largest Python Files in `tests`
 
-- `tests\providers\llm\test_user_selectable_provider.py`: 670 lines
+- `tests\providers\llm\test_user_selectable_provider.py`: 698 lines
 - `tests\modules\telegram\test_handlers_settings.py`: 519 lines
 - `tests\modules\telegram\test_handlers_basic.py`: 359 lines
 - `tests\modules\telegram\_shared.py`: 341 lines

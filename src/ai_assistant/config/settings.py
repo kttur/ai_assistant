@@ -132,7 +132,7 @@ class Settings:
                 default="claude-3-5-sonnet-latest",
             )
         )
-        ollama_model = getenv("OLLAMA_MODEL", "llama3.1")
+        ollama_model = getenv("OLLAMA_MODEL", "mistral-small3.2:24b")
 
         return cls(
             assistant_channel=getenv("ASSISTANT_CHANNEL", "telegram"),

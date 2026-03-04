@@ -180,6 +180,7 @@ Notes:
 - `AI_ASSISTANT_ANTHROPIC_BASE_URL` - optional base URL for Anthropic SDK (for example, a compatible gateway).
 - `AI_ASSISTANT_ANTHROPIC_MODEL` - default Anthropic model.
 - `AI_ASSISTANT_ANTHROPIC_AVAILABLE_MODELS` - list of Anthropic models available in settings (CSV).
+- `OLLAMA_MODEL` - default Ollama model.
 - `OLLAMA_AVAILABLE_MODELS` - list of Ollama models available in settings (CSV).
 - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME` - optional HTTP header name for Ollama authentication (for example, `Authorization`).
 - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE` - optional HTTP header value for Ollama authentication (for example, `Bearer <token>`).
@@ -346,7 +347,9 @@ To run with a local model:
 2. Set in `.env`:
    - `LLM_PROVIDER=ollama`
    - `OLLAMA_BASE_URL=http://localhost:11434`
-   - `OLLAMA_MODEL=llama3.1` (or another installed model)
+   - `OLLAMA_MODEL=mistral-small3.2:24b` (general local model)
+   - `OLLAMA_AVAILABLE_MODELS=mistral-small3.2:24b,puyangwang/medgemma-27b-it:q6`
+     (adds a local medical specialist model for routing)
    - optional auth header:
      - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME=Authorization`
      - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE=Bearer <token>`

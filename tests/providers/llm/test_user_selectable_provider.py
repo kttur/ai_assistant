@@ -668,3 +668,31 @@ def test_auto_mode_uses_high_risk_arbiter_even_when_router_arbiter_missing() -> 
     assert result == "specialist answer"
     assert specialist.calls == [(180, "llama3.1")]
     assert arbiter.calls == [(180, "gpt-4.1-mini")]
+
+
+def test_catalog_notes_marks_local_medical_models() -> None:
+    notes = UserSelectableLLMProvider._catalog_notes(
+        provider="ollama",
+        model="puyangwang/medgemma-27b-it:q6",
+    )
+
+    assert notes == "local medical-specialist runtime"
+
+
+def test_catalog_notes_marks_local_general_models() -> None:
+    notes = UserSelectableLLMProvider._catalog_notes(
+        provider="ollama",
+        model="mistral-small3.2:24b",
+    )
+
+    assert notes == "local general-purpose runtime"
+
+
+def test_model_cost_tier_treats_mid_size_local_models_as_balanced() -> None:
+    assert (
+        UserSelectableLLMProvider._model_cost_tier(
+            provider="ollama",
+            model="mistral-small3.2:24b",
+        )
+        == "balanced_local"
+    )
