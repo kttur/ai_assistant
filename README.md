@@ -117,12 +117,32 @@ These directories are intentionally excluded by generated map tooling to reduce 
 The compose stack runs:
 - `app` service (assistant bot);
 - `postgres` service;
+- `certbot-init` (optional, profile `tls`, one-time certificate issue);
+- `certbot-renew` (optional, profile `tls`, periodic renew loop);
 - persistent volume `ai_assistant_postgres_data` for PostgreSQL data.
 
 For compose mode, app container overrides:
 - `USER_SETTINGS_BACKEND=postgres`;
 - `PERMISSIONS_BACKEND=postgres`;
 - `POSTGRES_DSN=postgresql://<user>:<password>@postgres:5432/<db>`.
+
+TLS certificates (Let's Encrypt via certbot) in compose:
+
+1. Set in `.env`:
+   - `CERTBOT_DOMAIN=<your-domain>`
+   - `CERTBOT_EMAIL=<your-email>`
+   - `AI_ASSISTANT_REMOTE_TLS_CERT_PATH=/etc/letsencrypt/live/<your-domain>/fullchain.pem`
+   - `AI_ASSISTANT_REMOTE_TLS_KEY_PATH=/etc/letsencrypt/live/<your-domain>/privkey.pem`
+2. Issue first certificate:
+   - `docker compose --profile tls run --rm certbot-init`
+3. Start app + postgres:
+   - `docker compose up -d app postgres`
+4. Start renew loop:
+   - `docker compose --profile tls up -d certbot-renew`
+
+Notes:
+- certbot uses HTTP-01 challenge on port `80`, so your domain must resolve to this host and port `80` must be reachable from the internet;
+- app container mounts `/etc/letsencrypt` as read-only volume, so issued certs are available immediately for TLS startup.
 
 ## Key Environment Variables
 
@@ -174,6 +194,8 @@ For compose mode, app container overrides:
 - `AI_ASSISTANT_REMOTE_CLIENT_NAME` - optional device display name for Telegram list.
 - `AI_ASSISTANT_REMOTE_CLIENT_ACTIVE_SKILLS` - active skill ids on remote client (CSV).
 - `AI_ASSISTANT_REMOTE_CLIENT_SKILL_FACTORIES` - custom remote skill factories (CSV `module[:function]`).
+- `CERTBOT_DOMAIN` - domain used by compose `certbot-init` and `certbot-renew`.
+- `CERTBOT_EMAIL` - email used by compose certbot services.
 
 For backward compatibility, legacy names `OPENAI_*` and `ANTHROPIC_*` are still supported.
 

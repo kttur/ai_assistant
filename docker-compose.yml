@@ -13,7 +13,47 @@ services:
       USER_SETTINGS_BACKEND: postgres
       PERMISSIONS_BACKEND: postgres
       POSTGRES_DSN: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-ai_assistant}
+    volumes:
+      - certbot_etc:/etc/letsencrypt:ro
     command: ["python", "-m", "ai_assistant"]
+
+  certbot-init:
+    image: certbot/certbot:latest
+    profiles: ["tls"]
+    restart: "no"
+    environment:
+      CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
+    command:
+      [
+        "sh",
+        "-c",
+        "set -eu; if [ -z \"$$CERTBOT_DOMAIN\" ] || [ -z \"$$CERTBOT_EMAIL\" ]; then echo \"CERTBOT_DOMAIN and CERTBOT_EMAIL must be set in .env\"; exit 1; fi; certbot certonly --standalone --non-interactive --agree-tos --email \"$$CERTBOT_EMAIL\" -d \"$$CERTBOT_DOMAIN\" --keep-until-expiring",
+      ]
+    ports:
+      - "80:80"
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_var:/var/lib/letsencrypt
+
+  certbot-renew:
+    image: certbot/certbot:latest
+    profiles: ["tls"]
+    restart: unless-stopped
+    environment:
+      CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-}
+      CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
+    command:
+      [
+        "sh",
+        "-c",
+        "set -eu; if [ -z \"$$CERTBOT_DOMAIN\" ] || [ -z \"$$CERTBOT_EMAIL\" ]; then echo \"CERTBOT_DOMAIN and CERTBOT_EMAIL must be set in .env\"; exit 1; fi; trap exit TERM; while :; do certbot renew --standalone --non-interactive --agree-tos --email \"$$CERTBOT_EMAIL\"; sleep 12h & wait $$!; done",
+      ]
+    ports:
+      - "80:80"
+    volumes:
+      - certbot_etc:/etc/letsencrypt
+      - certbot_var:/var/lib/letsencrypt
 
   postgres:
     image: postgres:16-alpine
@@ -35,3 +75,5 @@ services:
 
 volumes:
   ai_assistant_postgres_data:
+  certbot_etc:
+  certbot_var:
