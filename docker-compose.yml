@@ -21,15 +21,18 @@ services:
     image: certbot/certbot:latest
     profiles: ["tls"]
     restart: "no"
+    entrypoint: ["sh", "-c"]
     environment:
       CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-}
       CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
     command:
-      [
-        "sh",
-        "-c",
-        "set -eu; if [ -z \"$$CERTBOT_DOMAIN\" ] || [ -z \"$$CERTBOT_EMAIL\" ]; then echo \"CERTBOT_DOMAIN and CERTBOT_EMAIL must be set in .env\"; exit 1; fi; certbot certonly --standalone --non-interactive --agree-tos --email \"$$CERTBOT_EMAIL\" -d \"$$CERTBOT_DOMAIN\" --keep-until-expiring",
-      ]
+      - |
+        set -eu
+        if [ -z "$$CERTBOT_DOMAIN" ] || [ -z "$$CERTBOT_EMAIL" ]; then
+          echo "CERTBOT_DOMAIN and CERTBOT_EMAIL must be set in .env"
+          exit 1
+        fi
+        certbot certonly --standalone --non-interactive --agree-tos --email "$$CERTBOT_EMAIL" -d "$$CERTBOT_DOMAIN" --keep-until-expiring
     ports:
       - "80:80"
     volumes:
@@ -40,15 +43,22 @@ services:
     image: certbot/certbot:latest
     profiles: ["tls"]
     restart: unless-stopped
+    entrypoint: ["sh", "-c"]
     environment:
       CERTBOT_DOMAIN: ${CERTBOT_DOMAIN:-}
       CERTBOT_EMAIL: ${CERTBOT_EMAIL:-}
     command:
-      [
-        "sh",
-        "-c",
-        "set -eu; if [ -z \"$$CERTBOT_DOMAIN\" ] || [ -z \"$$CERTBOT_EMAIL\" ]; then echo \"CERTBOT_DOMAIN and CERTBOT_EMAIL must be set in .env\"; exit 1; fi; trap exit TERM; while :; do certbot renew --standalone --non-interactive --agree-tos --email \"$$CERTBOT_EMAIL\"; sleep 12h & wait $$!; done",
-      ]
+      - |
+        set -eu
+        if [ -z "$$CERTBOT_DOMAIN" ] || [ -z "$$CERTBOT_EMAIL" ]; then
+          echo "CERTBOT_DOMAIN and CERTBOT_EMAIL must be set in .env"
+          exit 1
+        fi
+        trap exit TERM
+        while :; do
+          certbot renew --standalone --non-interactive --agree-tos --email "$$CERTBOT_EMAIL"
+          sleep 12h & wait $$!
+        done
     ports:
       - "80:80"
     volumes:
