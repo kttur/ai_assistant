@@ -52,6 +52,9 @@ def build_auto_router(
         backends=tuple(backends),
         timeout_seconds=settings.auto_router_timeout_seconds,
         health_registry=health_registry,
+        fast_path_enabled=settings.auto_router_fast_path_enabled,
+        fast_path_provider=settings.auto_router_fast_path_provider,
+        fast_path_model=settings.auto_router_fast_path_model,
     )
 
 

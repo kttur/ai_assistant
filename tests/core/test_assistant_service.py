@@ -126,8 +126,78 @@ def test_service_executes_tool_call_and_requests_final_answer() -> None:
     assert reply.text == "Done. Playback toggled."
     assert executor.calls == [(21, "media.play_pause", {})]
     assert len(llm.prompts) == 2
-    assert "Available commands JSON" in llm.prompts[0]
-    assert "Результаты выполнения команд" in llm.prompts[1]
+    assert "Commands:" in llm.prompts[0]
+    assert "Результаты команд" in llm.prompts[1]
+
+
+def test_service_executes_tool_call_from_fix_wrapper_compatibility_mode() -> None:
+    llm = SequencedLLMProvider(
+        responses=[
+            '<fix>{"command":"media.play_pause","args":{}}<fix>\n<fix>{"command":"media.play_pause","args":{}}<fix>',
+            "Done. Playback toggled twice.",
+        ]
+    )
+    store = InMemoryStore()
+    executor = FakeCommandExecutor()
+    service = AssistantService(
+        llm_provider=llm,
+        memory_store=store,
+        command_executor=executor,
+    )
+
+    reply = asyncio.run(service.process_text(user_id=22, text="subtitle back twice"))
+
+    assert reply.text == "Done. Playback toggled twice."
+    assert executor.calls == [
+        (22, "media.play_pause", {}),
+        (22, "media.play_pause", {}),
+    ]
+    assert len(llm.prompts) == 2
+    assert "Результаты команд" in llm.prompts[1]
+
+
+def test_service_executes_tool_call_from_code_wrapped_json() -> None:
+    llm = SequencedLLMProvider(
+        responses=[
+            '<code>{"command":"media.play_pause","args":{}}</code>',
+            "Done from code wrapper.",
+        ]
+    )
+    store = InMemoryStore()
+    executor = FakeCommandExecutor()
+    service = AssistantService(
+        llm_provider=llm,
+        memory_store=store,
+        command_executor=executor,
+    )
+
+    reply = asyncio.run(service.process_text(user_id=23, text="pause"))
+
+    assert reply.text == "Done from code wrapper."
+    assert executor.calls == [(23, "media.play_pause", {})]
+    assert len(llm.prompts) == 2
+
+
+def test_service_executes_tool_call_from_plain_json_object() -> None:
+    llm = SequencedLLMProvider(
+        responses=[
+            '{"command":"media.play_pause","args":{}}',
+            "Done from plain json.",
+        ]
+    )
+    store = InMemoryStore()
+    executor = FakeCommandExecutor()
+    service = AssistantService(
+        llm_provider=llm,
+        memory_store=store,
+        command_executor=executor,
+    )
+
+    reply = asyncio.run(service.process_text(user_id=24, text="pause"))
+
+    assert reply.text == "Done from plain json."
+    assert executor.calls == [(24, "media.play_pause", {})]
+    assert len(llm.prompts) == 2
 
 
 def test_service_applies_user_language_from_settings_to_prompt() -> None:
@@ -143,10 +213,10 @@ def test_service_applies_user_language_from_settings_to_prompt() -> None:
     reply = asyncio.run(service.process_text(user_id=55, text="Привет"))
 
     assert reply.text == "llm: 1"
-    assert "Preferred response language: English (en)." in llm.prompts[0]
+    assert "Reply in English unless user asks otherwise." in llm.prompts[0]
     assert "Пользователь: Привет" in llm.prompts[0]
     assert len(llm.prompts) == 1
-    assert "Available commands JSON" not in llm.prompts[0]
+    assert "Commands:" not in llm.prompts[0]
 
 
 def test_service_denies_tool_call_without_assistant_permission() -> None:
@@ -191,7 +261,7 @@ def test_service_filters_catalog_by_assistant_permissions() -> None:
 
     asyncio.run(service.process_text(user_id=88, text="music"))
 
-    assert "Available commands JSON" in llm.prompts[0]
+    assert "Commands:" in llm.prompts[0]
     assert '"media.play_pause"' in llm.prompts[0]
 
 

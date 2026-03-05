@@ -11,6 +11,14 @@ class RouterCatalogEntry:
     platform: str
     cost_tier: str
     notes: str = ""
+    tags: tuple[str, ...] = ()
+    domains: tuple[str, ...] = ()
+    roles: tuple[str, ...] = ()
+    priority: int = 100
+    strength: int = 0
+    supports_reasoning: bool = True
+    supports_non_reasoning: bool = True
+    abilities: tuple[str, ...] = ()
 
 
 @dataclass(slots=True, frozen=True)

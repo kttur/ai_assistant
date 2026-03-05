@@ -145,6 +145,18 @@ def test_from_env_reads_auto_router_and_health_settings(monkeypatch) -> None:
     assert settings.llm_health_max_cooldown_seconds == 900
 
 
+def test_from_env_uses_router_default_and_empty_manifest_path(monkeypatch) -> None:
+    monkeypatch.setattr("ai_assistant.config.settings.load_dotenv", lambda override=False: None)
+    monkeypatch.delenv("AI_ASSISTANT_MODEL_MANIFEST_PATH", raising=False)
+    monkeypatch.delenv("AI_ASSISTANT_AUTO_ROUTER_LOCAL_MODEL", raising=False)
+    monkeypatch.delenv("AUTO_ROUTER_LOCAL_MODEL", raising=False)
+
+    settings = Settings.from_env()
+
+    assert settings.model_manifest_path == ""
+    assert settings.auto_router_local_model == "qwen3:4b"
+
+
 def test_from_env_reads_ollama_auth_header_settings(monkeypatch) -> None:
     monkeypatch.setattr("ai_assistant.config.settings.load_dotenv", lambda override=False: None)
     _clear_ollama_env(monkeypatch)

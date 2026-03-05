@@ -7,6 +7,7 @@ from ai_assistant.bootstrap_llm.build_auto_router import build_auto_router
 from ai_assistant.bootstrap_llm.constants import AUTO_LLM_PROVIDER
 from ai_assistant.core.interfaces import LLMProvider, PermissionAdminStore, UserSettingsStore
 from ai_assistant.providers.llm.model_health_registry import ModelHealthRegistry
+from ai_assistant.providers.llm.model_manifest import load_model_manifest
 from ai_assistant.providers.llm.user_selectable_provider import UserSelectableLLMProvider
 from ai_assistant.bootstrap_llm.build_models_for_provider import build_models_for_provider
 
@@ -28,6 +29,7 @@ def build_llm_provider(
         )
         default_provider = next(iter(provider_instances.keys()))
 
+    model_manifest_entries = load_model_manifest(settings.model_manifest_path)
     available_models = {
         provider: build_models_for_provider(settings, provider)
         for provider in provider_instances.keys()
@@ -48,10 +50,11 @@ def build_llm_provider(
         health_registry=health_registry,
     )
     logger.info(
-        "Building user-selectable LLM provider: default_provider=%s auto_router=%s low_confidence_threshold=%.2f",
+        "Building user-selectable LLM provider: default_provider=%s auto_router=%s low_confidence_threshold=%.2f model_manifest_entries=%d",
         default_provider,
         "enabled" if auto_router is not None else "disabled",
         settings.auto_router_low_confidence_threshold,
+        len(model_manifest_entries),
     )
 
     return UserSelectableLLMProvider(
@@ -64,6 +67,7 @@ def build_llm_provider(
         admin_telegram_id=settings.admin_telegram_id,
         auto_router=auto_router,
         health_registry=health_registry,
+        model_manifest_entries=model_manifest_entries,
         auto_low_confidence_threshold=settings.auto_router_low_confidence_threshold,
         default_selection_mode=(
             "auto" if configured_default_provider == AUTO_LLM_PROVIDER else "manual"

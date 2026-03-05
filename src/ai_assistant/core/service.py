@@ -15,7 +15,13 @@ from ai_assistant.core.interfaces import (
 from ai_assistant.core.models import AssistantReply, ConversationMessage, UserMessage
 from ai_assistant.logging_utils import text_preview
 
-TOOL_CALL_PATTERN = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
+_TOOL_CALL_PATTERNS = (
+    re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL | re.IGNORECASE),
+    # Compatibility with models that still emit legacy wrappers like <fix>{...}<fix>.
+    re.compile(r"<fix>\s*(\{.*?\})\s*(?=(?:</fix>|<fix>))", re.DOTALL | re.IGNORECASE),
+    # Some models emit bare command JSON wrapped in Telegram HTML code tags.
+    re.compile(r"<code>\s*(\{.*?\})\s*</code>", re.DOTALL | re.IGNORECASE),
+)
 logger = logging.getLogger(__name__)
 
 
@@ -186,9 +192,9 @@ class AssistantService:
             return history[0].text
 
         lines = [
-            "Ты полезный AI-помощник. Учитывай историю диалога и отвечай на последнее сообщение пользователя.",
+            "Ты AI-помощник. Учитывай историю и отвечай на последнее сообщение.",
             "",
-            "История диалога:",
+            "История:",
         ]
         for item in history:
             if item.role == "user":
@@ -197,16 +203,16 @@ class AssistantService:
                 lines.append(f"Ассистент: {item.text}")
 
         if command_catalog:
+            compact_command_catalog = self._build_compact_command_catalog(command_catalog)
             lines.extend(
                 [
                     "",
-                    "You can call system commands when needed.",
-                    "Tool-call output format (exact):",
-                    '<tool_call>{"command":"media.play_pause","args":{}}</tool_call>',
-                    "If command execution is required, respond only with one or more tool_call blocks and no other text.",
-                    "If no command is needed, reply to the user normally.",
-                    "Available commands JSON:",
-                    json.dumps(command_catalog, ensure_ascii=False),
+                    "You can call system commands.",
+                    "Format: <tool_call>{\"command\":\"media.play_pause\",\"args\":{}}</tool_call>",
+                    "If command needed: output only tool_call blocks, no other text.",
+                    "Otherwise: reply normally.",
+                    "Commands:",
+                    json.dumps(compact_command_catalog, ensure_ascii=False),
                 ]
             )
 
@@ -270,11 +276,10 @@ class AssistantService:
         preferred_language: str | None = None,
     ) -> str:
         lines = [
-            "Ты полезный AI-помощник.",
-            "Ты уже выполнил системные команды. Сформируй финальный ответ пользователю на основе результатов.",
-            "Не выводи <tool_call> и не пытайся вызвать команды снова.",
+            "Команды выполнены. Сформируй финальный ответ на основе результатов.",
+            "Не выводи <tool_call> снова.",
             "",
-            "История диалога:",
+            "История:",
         ]
         for item in history:
             if item.role == "user":
@@ -284,7 +289,7 @@ class AssistantService:
         lines.extend(
             [
                 "",
-                "Результаты выполнения команд (JSON):",
+                "Результаты команд:",
                 json.dumps(tool_results, ensure_ascii=False),
                 "",
                 "Ассистент:",
@@ -336,37 +341,98 @@ class AssistantService:
     @staticmethod
     def _build_language_instruction(language: str) -> str:
         if language == "ru":
-            return (
-                "Preferred response language: Russian (ru). "
-                "Reply in Russian unless user explicitly asks for another language."
-            )
+            return "Reply in Russian unless user asks otherwise."
         if language == "en":
-            return (
-                "Preferred response language: English (en). "
-                "Reply in English unless user explicitly asks for another language."
-            )
-        return (
-            f"Preferred response language: {language}. "
-            "Reply in this language unless user explicitly asks for another language."
-        )
+            return "Reply in English unless user asks otherwise."
+        return f"Reply in {language} unless user asks otherwise."
 
     def _extract_tool_calls(self, llm_text: str) -> list[_ToolCall]:
         calls: list[_ToolCall] = []
-        for chunk in TOOL_CALL_PATTERN.findall(llm_text):
-            try:
-                payload = json.loads(chunk)
-            except json.JSONDecodeError:
+        for pattern in _TOOL_CALL_PATTERNS:
+            for chunk in pattern.findall(llm_text):
+                parsed = self._parse_tool_call_chunk(chunk)
+                if parsed is None:
+                    continue
+                calls.append(parsed)
+        if calls:
+            logger.debug(
+                "Extracted tool calls: commands=%s",
+                ", ".join(call.command for call in calls),
+            )
+            return calls
+
+        for chunk in self._extract_plain_json_chunks(llm_text):
+            parsed = self._parse_tool_call_chunk(chunk)
+            if parsed is None:
                 continue
-            if not isinstance(payload, dict):
-                continue
-            command = payload.get("command")
-            args = payload.get("args", {})
-            if not isinstance(command, str) or not isinstance(args, dict):
-                continue
-            calls.append(_ToolCall(command=command, args=args))
+            calls.append(parsed)
         if calls:
             logger.debug(
                 "Extracted tool calls: commands=%s",
                 ", ".join(call.command for call in calls),
             )
         return calls
+
+    @staticmethod
+    def _parse_tool_call_chunk(chunk: str) -> _ToolCall | None:
+        try:
+            payload = json.loads(chunk)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        command = payload.get("command")
+        args = payload.get("args", {})
+        if not isinstance(command, str) or not isinstance(args, dict):
+            return None
+        return _ToolCall(command=command, args=args)
+
+    @staticmethod
+    def _extract_plain_json_chunks(llm_text: str) -> tuple[str, ...]:
+        normalized = llm_text.strip()
+        if not normalized:
+            return ()
+
+        if normalized.startswith("```"):
+            lines = normalized.splitlines()
+            if len(lines) >= 3 and lines[0].startswith("```") and lines[-1].startswith("```"):
+                normalized = "\n".join(lines[1:-1]).strip()
+
+        decoder = json.JSONDecoder()
+        chunks: list[str] = []
+        index = 0
+        while index < len(normalized):
+            while index < len(normalized) and normalized[index].isspace():
+                index += 1
+            if index >= len(normalized):
+                break
+            try:
+                payload, end_index = decoder.raw_decode(normalized, idx=index)
+            except json.JSONDecodeError:
+                return ()
+            if not isinstance(payload, dict):
+                return ()
+            chunks.append(normalized[index:end_index])
+            index = end_index
+        return tuple(chunks)
+
+    @staticmethod
+    def _build_compact_command_catalog(
+        command_catalog: list[dict[str, object]],
+    ) -> list[dict[str, object]]:
+        compact: list[dict[str, object]] = []
+        for item in command_catalog:
+            command = item.get("command")
+            if not isinstance(command, str) or not command.strip():
+                continue
+            normalized_command = command.strip()
+            description = item.get("description")
+            args = item.get("args")
+            compact.append(
+                {
+                    "command": normalized_command,
+                    "description": description.strip() if isinstance(description, str) else "",
+                    "args": args if isinstance(args, dict) else {},
+                }
+            )
+        return compact

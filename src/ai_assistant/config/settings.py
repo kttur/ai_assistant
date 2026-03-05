@@ -39,12 +39,16 @@ class Settings:
     assistant_channel: str
     llm_provider: str
     llm_available_providers: tuple[str, ...]
+    model_manifest_path: str
     auto_router_local_provider: str
     auto_router_local_model: str
     auto_router_cloud_provider: str
     auto_router_cloud_model: str
     auto_router_timeout_seconds: float
     auto_router_low_confidence_threshold: float
+    auto_router_fast_path_enabled: bool
+    auto_router_fast_path_provider: str
+    auto_router_fast_path_model: str
     llm_health_base_cooldown_seconds: int
     llm_health_max_cooldown_seconds: int
     openai_available_models: tuple[str, ...]
@@ -140,6 +144,7 @@ class Settings:
             llm_available_providers=_parse_csv(
                 getenv("LLM_AVAILABLE_PROVIDERS", "mock,openai,anthropic,ollama")
             ),
+            model_manifest_path=getenv("AI_ASSISTANT_MODEL_MANIFEST_PATH", ""),
             auto_router_local_provider=_get_first_env(
                 "AI_ASSISTANT_AUTO_ROUTER_LOCAL_PROVIDER",
                 "AUTO_ROUTER_LOCAL_PROVIDER",
@@ -148,7 +153,7 @@ class Settings:
             auto_router_local_model=_get_first_env(
                 "AI_ASSISTANT_AUTO_ROUTER_LOCAL_MODEL",
                 "AUTO_ROUTER_LOCAL_MODEL",
-                default=ollama_model,
+                default="qwen3:4b",
             ),
             auto_router_cloud_provider=_get_first_env(
                 "AI_ASSISTANT_AUTO_ROUTER_CLOUD_PROVIDER",
@@ -174,18 +179,35 @@ class Settings:
                     default="0.55",
                 )
             ),
+            auto_router_fast_path_enabled=_parse_bool(
+                _get_first_env(
+                    "AI_ASSISTANT_AUTO_ROUTER_FAST_PATH_ENABLED",
+                    "AUTO_ROUTER_FAST_PATH_ENABLED",
+                    default="true",
+                )
+            ),
+            auto_router_fast_path_provider=_get_first_env(
+                "AI_ASSISTANT_AUTO_ROUTER_FAST_PATH_PROVIDER",
+                "AUTO_ROUTER_FAST_PATH_PROVIDER",
+                default="ollama",
+            ),
+            auto_router_fast_path_model=_get_first_env(
+                "AI_ASSISTANT_AUTO_ROUTER_FAST_PATH_MODEL",
+                "AUTO_ROUTER_FAST_PATH_MODEL",
+                default="qwen3:8b",
+            ),
             llm_health_base_cooldown_seconds=int(
                 _get_first_env(
                     "AI_ASSISTANT_LLM_HEALTH_BASE_COOLDOWN_SECONDS",
                     "LLM_HEALTH_BASE_COOLDOWN_SECONDS",
-                    default="120",
+                    default="30",
                 )
             ),
             llm_health_max_cooldown_seconds=int(
                 _get_first_env(
                     "AI_ASSISTANT_LLM_HEALTH_MAX_COOLDOWN_SECONDS",
                     "LLM_HEALTH_MAX_COOLDOWN_SECONDS",
-                    default="1800",
+                    default="300",
                 )
             ),
             openai_available_models=openai_available_models,

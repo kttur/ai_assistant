@@ -5,6 +5,7 @@ import pytest
 from ai_assistant.core.models import UserMessage
 from ai_assistant.providers.llm.auto_router_types import RouteArbiter, RouteCandidate, RouteDecision
 from ai_assistant.providers.llm.model_health_registry import ModelHealthRegistry
+from ai_assistant.providers.llm.model_manifest import ModelManifestEntry
 from ai_assistant.providers.llm.user_selectable_provider import UserSelectableLLMProvider
 
 
@@ -81,6 +82,16 @@ class _FakeAutoRouter:
         if isinstance(item, Exception):
             raise item
         return item
+
+
+class _CatalogSpyAutoRouter:
+    def __init__(self, decision: RouteDecision) -> None:
+        self.decision = decision
+        self.catalogs = []
+
+    async def route(self, *, message: UserMessage, candidate_catalog) -> RouteDecision:
+        self.catalogs.append(candidate_catalog)
+        return self.decision
 
 
 def test_user_selectable_provider_uses_defaults() -> None:
@@ -535,6 +546,66 @@ def test_auto_mode_low_confidence_upgrade_tier_policy_prefers_higher_tier_model(
     assert ollama.calls == []
 
 
+def test_auto_mode_high_complexity_prefers_stronger_specialist_from_manifest() -> None:
+    ollama = _FlakyProvider("ollama", failing_models={"mistral-small3.2:24b"})
+    openai = _FakeProvider("openai")
+    store = _FakeStore(
+        {
+            (151, "llm_provider"): "auto",
+        }
+    )
+    auto_router = _FakeAutoRouter(
+        [
+            RouteDecision(
+                confidence=0.9,
+                risk_level="medium",
+                complexity="high",
+                required_capabilities=("reasoning",),
+                candidates=(
+                    RouteCandidate(provider="ollama", model="mistral-small3.2:24b"),
+                ),
+            )
+        ]
+    )
+    router = UserSelectableLLMProvider(
+        providers={"ollama": ollama, "openai": openai},
+        default_provider="openai",
+        default_models={"openai": "gpt-5-mini", "ollama": "mistral-small3.2:24b"},
+        available_models={"openai": ("gpt-5.2", "gpt-5-mini"), "ollama": ("mistral-small3.2:24b",)},
+        user_settings_store=store,
+        auto_router=auto_router,
+        model_manifest_entries=(
+            ModelManifestEntry(
+                provider="ollama",
+                model="mistral-small3.2:24b",
+                roles=("specialist",),
+                priority=30,
+                strength=3,
+            ),
+            ModelManifestEntry(
+                provider="openai",
+                model="gpt-5.2",
+                roles=("specialist",),
+                priority=25,
+                strength=5,
+            ),
+            ModelManifestEntry(
+                provider="openai",
+                model="gpt-5-mini",
+                roles=("specialist",),
+                priority=35,
+                strength=4,
+            ),
+        ),
+    )
+
+    result = asyncio.run(router.generate_reply(UserMessage(user_id=151, text="hard task")))
+
+    assert result == "openai:gpt-5.2"
+    assert openai.calls == [(151, "gpt-5.2")]
+    assert ollama.calls == [(151, "mistral-small3.2:24b")]
+
+
 def test_auto_mode_arbiter_can_edit_specialist_answer() -> None:
     specialist = _ScriptedProvider("ollama", replies=["draft answer"])
     arbiter = _ScriptedProvider(
@@ -695,4 +766,119 @@ def test_model_cost_tier_treats_mid_size_local_models_as_balanced() -> None:
             model="mistral-small3.2:24b",
         )
         == "balanced_local"
+    )
+
+
+def test_auto_mode_catalog_uses_manifest_metadata_and_skips_router_only_models() -> None:
+    specialist = _FakeProvider("ollama")
+    store = _FakeStore(
+        {
+            (190, "llm_provider"): "auto",
+        }
+    )
+    auto_router = _CatalogSpyAutoRouter(
+        RouteDecision(
+            confidence=0.7,
+            risk_level="medium",
+            complexity="medium",
+            required_capabilities=("reasoning",),
+            candidates=(RouteCandidate(provider="ollama", model="mistral-small3.2:24b"),),
+        )
+    )
+    router = UserSelectableLLMProvider(
+        providers={"ollama": specialist},
+        default_provider="ollama",
+        default_models={"ollama": "mistral-small3.2:24b"},
+        available_models={"ollama": ("mistral-small3.2:24b", "qwen3:4b")},
+        user_settings_store=store,
+        auto_router=auto_router,
+        model_manifest_entries=(
+            ModelManifestEntry(
+                provider="ollama",
+                model="qwen3:4b",
+                roles=("router",),
+                tags=("fast", "small"),
+                domains=("general",),
+            ),
+            ModelManifestEntry(
+                provider="ollama",
+                model="mistral-small3.2:24b",
+                roles=("specialist",),
+                tags=("general", "reasoning"),
+                domains=("general",),
+                notes="primary local specialist",
+                supports_reasoning=True,
+                supports_non_reasoning=True,
+                abilities=("text", "tool_calling"),
+            ),
+        ),
+    )
+
+    result = asyncio.run(router.generate_reply(UserMessage(user_id=190, text="explain this topic")))
+
+    assert result == "ollama:mistral-small3.2:24b"
+    assert specialist.calls == [(190, "mistral-small3.2:24b")]
+    assert len(auto_router.catalogs) == 1
+    catalog = auto_router.catalogs[0]
+    assert len(catalog) == 1
+    assert catalog[0].provider == "ollama"
+    assert catalog[0].model == "mistral-small3.2:24b"
+    assert catalog[0].notes == "primary local specialist"
+    assert catalog[0].tags == ("general", "reasoning")
+    assert catalog[0].domains == ("general",)
+    assert catalog[0].supports_reasoning is True
+    assert catalog[0].supports_non_reasoning is True
+    assert catalog[0].abilities == ("text", "tool_calling")
+
+
+def test_auto_mode_catalog_in_strict_manifest_mode_ignores_non_manifest_models() -> None:
+    ollama = _FakeProvider("ollama")
+    openai = _FakeProvider("openai")
+    store = _FakeStore(
+        {
+            (191, "llm_provider"): "auto",
+        }
+    )
+    auto_router = _CatalogSpyAutoRouter(
+        RouteDecision(
+            confidence=0.8,
+            risk_level="low",
+            complexity="low",
+            required_capabilities=(),
+            candidates=(RouteCandidate(provider="ollama", model="qwen3:8b"),),
+        )
+    )
+    router = UserSelectableLLMProvider(
+        providers={"openai": openai, "ollama": ollama},
+        default_provider="ollama",
+        default_models={"openai": "gpt-5-mini", "ollama": "qwen3:8b"},
+        available_models={
+            "openai": ("gpt-5-mini", "gpt-5-nano"),
+            "ollama": ("qwen3:8b", "qwen3:4b", "qwen3:4b-instruct"),
+        },
+        user_settings_store=store,
+        auto_router=auto_router,
+        model_manifest_entries=(
+            ModelManifestEntry(
+                provider="ollama",
+                model="qwen3:8b",
+                roles=("specialist",),
+            ),
+            ModelManifestEntry(
+                provider="openai",
+                model="gpt-5-mini",
+                roles=("specialist",),
+            ),
+        ),
+    )
+
+    result = asyncio.run(router.generate_reply(UserMessage(user_id=191, text="resume playback")))
+
+    assert result == "ollama:qwen3:8b"
+    assert ollama.calls == [(191, "qwen3:8b")]
+    assert len(auto_router.catalogs) == 1
+    catalog = auto_router.catalogs[0]
+    assert tuple((item.provider, item.model) for item in catalog) == (
+        ("ollama", "qwen3:8b"),
+        ("openai", "gpt-5-mini"),
     )

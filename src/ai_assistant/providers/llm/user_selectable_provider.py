@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from ai_assistant.core.interfaces import LLMProvider, PermissionChecker, UserSettingsStore
 from ai_assistant.core.models import UserMessage
@@ -17,6 +18,11 @@ from ai_assistant.providers.llm.auto_router_types import (
     RouterCatalogEntry,
 )
 from ai_assistant.providers.llm.model_health_registry import ModelHealthRegistry
+from ai_assistant.providers.llm.model_manifest import (
+    ModelManifestEntry,
+    build_manifest_index,
+    manifest_entry_key,
+)
 
 AUTO_PROVIDER_NAME = "auto"
 _LOCAL_PROVIDER_NAMES = {"ollama", "mock"}
@@ -30,12 +36,21 @@ _LOW_CONFIDENCE_POLICIES = {
 _AUTO_TIER_PRIORITY = {
     "cheap_local": 0,
     "balanced_local": 1,
-    "cheap_cloud": 2,
-    "balanced_cloud": 3,
-    "premium_cloud": 4,
+    "very_cheap_cloud": 2,
+    "cheap_cloud": 3,
+    "balanced_cloud": 4,
+    "premium_cloud": 5,
 }
+_SPECIALIST_MODEL_ROLE = "specialist"
 
 logger = logging.getLogger(__name__)
+
+
+def _catalog_item_or_none(
+    catalog_map: dict[tuple[str, str], RouterCatalogEntry],
+    candidate: RouteCandidate,
+) -> RouterCatalogEntry | None:
+    return catalog_map.get((candidate.provider.strip().lower(), candidate.model.strip()))
 
 
 class UserSelectableLLMProvider:
@@ -50,6 +65,7 @@ class UserSelectableLLMProvider:
         admin_telegram_id: int | None = None,
         auto_router: AutoRouterProtocol | None = None,
         health_registry: ModelHealthRegistry | None = None,
+        model_manifest_entries: tuple[ModelManifestEntry, ...] = (),
         auto_low_confidence_threshold: float = 0.55,
         default_low_confidence_policy: str = LOW_CONFIDENCE_POLICY_KEEP_CURRENT,
         default_selection_mode: str = "manual",
@@ -83,7 +99,10 @@ class UserSelectableLLMProvider:
         self._admin_telegram_id = admin_telegram_id
         self._auto_router = auto_router
         self._health_registry = health_registry
+        self._model_manifest_index = build_manifest_index(model_manifest_entries)
+        self._strict_manifest_mode = bool(self._model_manifest_index)
         self._auto_low_confidence_threshold = min(1.0, max(0.0, float(auto_low_confidence_threshold)))
+        self._route_decision_cache: dict[datetime, RouteDecision] = {}
         normalized_policy = default_low_confidence_policy.strip().lower()
         if normalized_policy not in _LOW_CONFIDENCE_POLICIES:
             normalized_policy = LOW_CONFIDENCE_POLICY_KEEP_CURRENT
@@ -252,20 +271,32 @@ class UserSelectableLLMProvider:
             logger.warning("Auto-route skipped: empty router catalog for user_id=%s", user_id)
             return None
 
-        logger.debug(
-            "Auto-route catalog prepared: user_id=%s entries=%d chain=%s",
-            user_id,
-            len(catalog),
-            format_model_chain((item.provider, item.model) for item in catalog),
-        )
-        try:
-            decision = await self._auto_router.route(
-                message=message,
-                candidate_catalog=catalog,
+        # Check if we have a cached routing decision for this message
+        cached_decision = self._get_cached_route_decision(message.timestamp)
+        if cached_decision is not None:
+            logger.debug(
+                "Using cached route decision: message_ts=%s chain=%s",
+                message.timestamp.isoformat(),
+                format_model_chain((item.provider, item.model) for item in cached_decision.candidates),
             )
-        except Exception as exc:
-            logger.warning("Auto-route failed for user_id=%s: %s", user_id, exc)
-            return None
+            decision = cached_decision
+        else:
+            logger.debug(
+                "Auto-route catalog prepared: user_id=%s entries=%d chain=%s",
+                user_id,
+                len(catalog),
+                format_model_chain((item.provider, item.model) for item in catalog),
+            )
+            try:
+                decision = await self._auto_router.route(
+                    message=message,
+                    candidate_catalog=catalog,
+                )
+                # Cache the routing decision for this message
+                self._cache_route_decision(message.timestamp, decision)
+            except Exception as exc:
+                logger.warning("Auto-route failed for user_id=%s: %s", user_id, exc)
+                return None
 
         low_confidence_policy = await self._read_auto_low_confidence_policy(user_id=user_id)
         low_confidence = decision.confidence < self._auto_low_confidence_threshold
@@ -368,20 +399,81 @@ class UserSelectableLLMProvider:
     ) -> tuple[RouterCatalogEntry, ...]:
         entries: list[RouterCatalogEntry] = []
         seen: set[tuple[str, str]] = set()
-        for provider in allowed_providers:
+        provider_order = sorted(
+            allowed_providers,
+            key=lambda item: (
+                0 if item in _LOCAL_PROVIDER_NAMES else 1,
+                item,
+            ),
+        )
+        for provider in provider_order:
             models = await self._get_allowed_models_for_provider(user_id=user_id, provider=provider)
             for model in models:
                 key = (provider, model)
                 if key in seen:
+                    continue
+                manifest_entry = self._model_manifest_index.get(manifest_entry_key(provider, model))
+                if self._strict_manifest_mode and manifest_entry is None:
+                    logger.debug(
+                        "Skipping router catalog model not present in manifest: user_id=%s provider=%s model=%s",
+                        user_id,
+                        provider,
+                        model,
+                    )
+                    continue
+                if (
+                    manifest_entry is not None
+                    and manifest_entry.roles
+                    and _SPECIALIST_MODEL_ROLE not in manifest_entry.roles
+                ):
+                    logger.debug(
+                        "Skipping router catalog model due to manifest roles: user_id=%s provider=%s model=%s roles=%s",
+                        user_id,
+                        provider,
+                        model,
+                        ",".join(manifest_entry.roles),
+                    )
                     continue
                 seen.add(key)
                 entries.append(
                     RouterCatalogEntry(
                         provider=provider,
                         model=model,
-                        platform=self._provider_platform(provider),
-                        cost_tier=self._model_cost_tier(provider=provider, model=model),
-                        notes=self._catalog_notes(provider=provider, model=model),
+                        platform=(
+                            manifest_entry.platform
+                            if manifest_entry is not None and manifest_entry.platform
+                            else self._provider_platform(provider)
+                        ),
+                        cost_tier=(
+                            manifest_entry.cost_tier
+                            if manifest_entry is not None and manifest_entry.cost_tier
+                            else self._model_cost_tier(provider=provider, model=model)
+                        ),
+                        notes=(
+                            manifest_entry.notes
+                            if manifest_entry is not None and manifest_entry.notes
+                            else self._catalog_notes(provider=provider, model=model)
+                        ),
+                        tags=manifest_entry.tags if manifest_entry is not None else (),
+                        domains=manifest_entry.domains if manifest_entry is not None else (),
+                        roles=manifest_entry.roles if manifest_entry is not None else (_SPECIALIST_MODEL_ROLE,),
+                        priority=(
+                            manifest_entry.priority
+                            if manifest_entry is not None
+                            else self._default_model_priority(provider=provider, model=model)
+                        ),
+                        strength=(
+                            manifest_entry.strength
+                            if manifest_entry is not None
+                            else self._default_model_strength(provider=provider, model=model)
+                        ),
+                        supports_reasoning=(
+                            manifest_entry.supports_reasoning if manifest_entry is not None else True
+                        ),
+                        supports_non_reasoning=(
+                            manifest_entry.supports_non_reasoning if manifest_entry is not None else True
+                        ),
+                        abilities=manifest_entry.abilities if manifest_entry is not None else ("text",),
                     )
                 )
         logger.debug(
@@ -473,6 +565,16 @@ class UserSelectableLLMProvider:
                     reason="catalog_fallback",
                 )
             )
+        if self._should_prioritize_stronger_specialists(decision):
+            logger.debug(
+                "Applying complexity/risk queue reprioritization: complexity=%s risk=%s",
+                decision.complexity,
+                decision.risk_level,
+            )
+            queue = self._reprioritize_queue_for_complex_or_risky_request(
+                queue=queue,
+                catalog=catalog,
+            )
         if low_confidence and low_confidence_policy == LOW_CONFIDENCE_POLICY_UPGRADE_TIER:
             logger.debug(
                 "Applying low-confidence queue reprioritization: policy=%s confidence=%.2f",
@@ -491,24 +593,65 @@ class UserSelectableLLMProvider:
         queue: list[RouteCandidate],
         catalog: tuple[RouterCatalogEntry, ...],
     ) -> list[RouteCandidate]:
-        catalog_tiers = {
-            (item.provider.strip().lower(), item.model.strip()): item.cost_tier
+        catalog_map = {
+            (item.provider.strip().lower(), item.model.strip()): item
             for item in catalog
         }
         with_index = list(enumerate(queue))
-        with_index.sort(
-            key=lambda item: (
-                -_AUTO_TIER_PRIORITY.get(
-                    catalog_tiers.get(
-                        (item[1].provider.strip().lower(), item[1].model.strip()),
-                        item[1].tier,
-                    ),
-                    -1,
-                ),
+
+        def sort_key(item: tuple[int, RouteCandidate]) -> tuple[int, int, int, int]:
+            entry = _catalog_item_or_none(catalog_map, item[1])
+            tier = entry.cost_tier if entry is not None else item[1].tier
+            strength = entry.strength if entry is not None else 0
+            priority = entry.priority if entry is not None else 100
+            return (
+                -_AUTO_TIER_PRIORITY.get(tier, -1),
+                -strength,
+                priority,
                 item[0],
             )
+
+        with_index.sort(
+            key=sort_key
         )
         return [candidate for _, candidate in with_index]
+
+    @staticmethod
+    def _reprioritize_queue_for_complex_or_risky_request(
+        *,
+        queue: list[RouteCandidate],
+        catalog: tuple[RouterCatalogEntry, ...],
+    ) -> list[RouteCandidate]:
+        if len(queue) <= 1:
+            return list(queue)
+
+        catalog_map = {
+            (item.provider.strip().lower(), item.model.strip()): item
+            for item in catalog
+        }
+        head = queue[0]
+        with_index = list(enumerate(queue[1:], start=1))
+
+        def sort_key(item: tuple[int, RouteCandidate]) -> tuple[int, int, int, int]:
+            entry = _catalog_item_or_none(catalog_map, item[1])
+            tier = entry.cost_tier if entry is not None else item[1].tier
+            strength = entry.strength if entry is not None else 0
+            priority = entry.priority if entry is not None else 100
+            return (
+                -strength,
+                -_AUTO_TIER_PRIORITY.get(tier, -1),
+                priority,
+                item[0],
+            )
+
+        with_index.sort(
+            key=sort_key
+        )
+        return [head, *[candidate for _, candidate in with_index]]
+
+    @staticmethod
+    def _should_prioritize_stronger_specialists(decision: RouteDecision) -> bool:
+        return decision.complexity == "high" or decision.risk_level == "high"
 
     async def _read_user_preferences(self, user_id: int) -> tuple[str | None, str | None]:
         selected_provider: str | None = None
@@ -838,7 +981,10 @@ class UserSelectableLLMProvider:
         sorted_catalog = sorted(
             catalog,
             key=lambda item: (
+                -int("arbiter" in item.roles),
+                -item.strength,
                 -_AUTO_TIER_PRIORITY.get(item.cost_tier, -1),
+                item.priority,
                 item.provider,
                 item.model,
             ),
@@ -929,6 +1075,16 @@ class UserSelectableLLMProvider:
             return "premium_cloud"
         return "balanced_cloud"
 
+    @staticmethod
+    def _default_model_priority(provider: str, model: str) -> int:
+        del provider, model
+        return 100
+
+    @classmethod
+    def _default_model_strength(cls, *, provider: str, model: str) -> int:
+        cost_tier = cls._model_cost_tier(provider=provider, model=model)
+        return _AUTO_TIER_PRIORITY.get(cost_tier, 0)
+
     def _provider_requires_model(self, provider: str) -> bool:
         if self._default_models.get(provider):
             return True
@@ -993,3 +1149,21 @@ class UserSelectableLLMProvider:
             return provider_name or None, None
 
         return None, normalized
+
+    def _cache_route_decision(self, message_timestamp: datetime, decision: RouteDecision) -> None:
+        """Cache a routing decision for a specific message timestamp."""
+        self._route_decision_cache[message_timestamp] = decision
+        # Cleanup old cache entries (keep only last 10)
+        if len(self._route_decision_cache) > 10:
+            oldest_keys = sorted(self._route_decision_cache.keys())[:-10]
+            for key in oldest_keys:
+                del self._route_decision_cache[key]
+        logger.debug(
+            "Cached route decision: message_ts=%s cache_size=%d",
+            message_timestamp.isoformat(),
+            len(self._route_decision_cache),
+        )
+
+    def _get_cached_route_decision(self, message_timestamp: datetime) -> RouteDecision | None:
+        """Retrieve cached routing decision for a specific message timestamp."""
+        return self._route_decision_cache.get(message_timestamp)

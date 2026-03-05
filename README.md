@@ -152,6 +152,7 @@ Notes:
 - `TELEGRAM_BOT_TOKEN` - Telegram bot token.
 - `LLM_PROVIDER` - model provider (`mock`, `openai`, `anthropic`, `ollama`) or `auto`.
 - `LLM_AVAILABLE_PROVIDERS` - list of providers available in settings (CSV). May include `auto`.
+- `AI_ASSISTANT_MODEL_MANIFEST_PATH` - optional JSON manifest with model metadata (tags/domains/roles) used by auto-routing.
 - `AI_ASSISTANT_AUTO_ROUTER_LOCAL_PROVIDER` - primary router backend provider (default `ollama`).
 - `AI_ASSISTANT_AUTO_ROUTER_LOCAL_MODEL` - primary router model.
 - `AI_ASSISTANT_AUTO_ROUTER_CLOUD_PROVIDER` - fallback router backend provider (default `openai`).
@@ -347,16 +348,72 @@ To run with a local model:
 2. Set in `.env`:
    - `LLM_PROVIDER=ollama`
    - `OLLAMA_BASE_URL=http://localhost:11434`
+   - `AI_ASSISTANT_AUTO_ROUTER_LOCAL_MODEL=qwen3:4b` (fast local router model)
+   - `AI_ASSISTANT_AUTO_ROUTER_CLOUD_MODEL=gpt-5-nano` (backup cloud router model)
    - `OLLAMA_MODEL=mistral-small3.2:24b` (general local model)
-   - `OLLAMA_AVAILABLE_MODELS=mistral-small3.2:24b,puyangwang/medgemma-27b-it:q6`
-     (adds a local medical specialist model for routing)
+   - `AI_ASSISTANT_MODEL_MANIFEST_PATH=context/model_manifest.json`
+   - `OLLAMA_AVAILABLE_MODELS=qwen3:4b,mistral-small3.2:24b,qwen3:32b,puyangwang/medgemma-27b-it:q6` (fallback when no manifest is used)
    - optional auth header:
-     - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME=Authorization`
-     - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE=Bearer <token>`
+      - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_NAME=Authorization`
+      - `AI_ASSISTANT_OLLAMA_AUTH_HEADER_VALUE=Bearer <token>`
    - optional multiple headers via JSON:
      - `AI_ASSISTANT_OLLAMA_EXTRA_HEADERS_JSON={"CF-Access-Client-Id":"...","CF-Access-Client-Secret":"..."}`
 3. Verify that the model is installed (`ollama list`).
 4. Start the bot and use `/ask`.
+
+### Model Manifest
+
+When `AI_ASSISTANT_MODEL_MANIFEST_PATH` is set, the app reads a JSON manifest with model metadata.
+Manifest entries are merged into provider model lists and used by the auto-router catalog.
+
+Example:
+
+```json
+{
+  "version": 1,
+  "models": [
+    {
+      "provider": "ollama",
+      "model": "qwen3:4b",
+      "roles": ["router", "specialist"],
+      "priority": 10,
+      "strength": 1,
+      "supports_reasoning": true,
+      "supports_non_reasoning": true,
+      "abilities": ["text", "formatting", "tool_calling", "assistant_commands"],
+      "tags": ["fast", "small", "formatting"],
+      "domains": ["general", "assistant_ops"]
+    },
+    {
+      "provider": "ollama",
+      "model": "puyangwang/medgemma-27b-it:q6",
+      "roles": ["specialist"],
+      "priority": 5,
+      "strength": 4,
+      "supports_reasoning": false,
+      "supports_non_reasoning": true,
+      "abilities": ["text", "image_input", "medical_reasoning"],
+      "tags": ["medical", "clinical"],
+      "domains": ["medical"]
+    }
+  ]
+}
+```
+
+Supported fields per model:
+- `provider` and `model` (required)
+- `roles` (for example `router`, `specialist`)
+- `tags`, `domains`
+- `platform`, `cost_tier`, `notes`
+- `priority` (lower value = preferred)
+- `strength` (higher value = stronger model for difficult/risky tasks)
+- `supports_reasoning`, `supports_non_reasoning`
+- `abilities` (for example: `text`, `image_input`, `document_input`, `audio_input`, `tool_calling`, `assistant_commands`)
+
+Routing behavior with manifest:
+- local router is used first, cloud router is backup;
+- for low confidence with `upgrade_tier`, candidate queue is shifted toward higher-tier/stronger models;
+- for high complexity or high risk, queue is additionally reprioritized toward higher `strength` and better `priority`.
 
 ## LLM Tool Calls
 
@@ -434,11 +491,11 @@ and setting/option names and descriptions come from PostgreSQL i18n tables.
   - return minor edits,
   - request one regeneration attempt with refined instructions.
 
-The list of available options comes from `.env`:
+The list of available options comes from `.env` and optional model manifest:
 - providers: `LLM_AVAILABLE_PROVIDERS`;
 - OpenAI models: `AI_ASSISTANT_OPENAI_AVAILABLE_MODELS`;
 - Anthropic models: `AI_ASSISTANT_ANTHROPIC_AVAILABLE_MODELS`;
-- Ollama models: `OLLAMA_AVAILABLE_MODELS`.
+- Ollama models: `OLLAMA_AVAILABLE_MODELS` plus models from `AI_ASSISTANT_MODEL_MANIFEST_PATH`.
 
 Option visibility is restricted by permissions:
 - `assistant/llm.provider.<provider>`

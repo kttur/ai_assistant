@@ -32,8 +32,8 @@ class _ModelHealthState:
 class ModelHealthRegistry:
     def __init__(
         self,
-        base_cooldown_seconds: int = 120,
-        max_cooldown_seconds: int = 1800,
+        base_cooldown_seconds: int = 30,
+        max_cooldown_seconds: int = 300,
     ) -> None:
         self._base_cooldown_seconds = max(1, int(base_cooldown_seconds))
         self._max_cooldown_seconds = max(
