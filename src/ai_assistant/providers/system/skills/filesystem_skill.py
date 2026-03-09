@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import codecs
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +12,7 @@ _MAX_LIST_ITEMS = 500
 _DEFAULT_MAX_READ_CHARS = 4000
 _MAX_READ_CHARS = 200000
 _DEFAULT_ENCODING = "utf-8"
+_MAX_TELEGRAM_DOCUMENT_BYTES = 20 * 1024 * 1024
 
 
 def build_filesystem_skill() -> ExecutableSkill:
@@ -54,6 +56,18 @@ def build_filesystem_skill() -> ExecutableSkill:
                     "encoding": "optional text encoding, default utf-8",
                     "append": "optional boolean, true appends to file, false overwrites",
                     "create_parents": "optional boolean, create missing parent directories",
+                    "send_to_telegram": "optional boolean, include written file for Telegram delivery",
+                    "telegram_filename": "optional file name for Telegram attachment",
+                    "telegram_caption": "optional caption for Telegram attachment",
+                },
+            ),
+            SkillCommandSpec(
+                command="filesystem.send_file",
+                description="Load existing file and include it for Telegram delivery.",
+                args={
+                    "path": "file path; relative paths are resolved from current working directory",
+                    "telegram_filename": "optional file name for Telegram attachment",
+                    "telegram_caption": "optional caption for Telegram attachment",
                 },
             ),
         ),
@@ -68,6 +82,8 @@ def build_filesystem_skill() -> ExecutableSkill:
             return _read_file(args)
         if command == "filesystem.write_file":
             return _write_file(args)
+        if command == "filesystem.send_file":
+            return _send_file(args)
         return {"ok": False, "message": f"Unknown command: {command}"}
 
     return ExecutableSkill(spec=spec, execute=execute)
@@ -249,6 +265,29 @@ def _write_file(args: dict[str, object]) -> dict[str, object]:
     assert append is not None
     assert create_parents is not None
 
+    send_to_telegram, send_to_telegram_error = _parse_bool_arg(
+        args.get("send_to_telegram"),
+        key="send_to_telegram",
+        default=False,
+    )
+    if send_to_telegram_error:
+        return {"ok": False, "message": send_to_telegram_error}
+
+    telegram_filename, filename_error = _parse_optional_string_arg(
+        args.get("telegram_filename"),
+        key="telegram_filename",
+    )
+    if filename_error:
+        return {"ok": False, "message": filename_error}
+    telegram_caption, caption_error = _parse_optional_string_arg(
+        args.get("telegram_caption"),
+        key="telegram_caption",
+    )
+    if caption_error:
+        return {"ok": False, "message": caption_error}
+
+    assert send_to_telegram is not None
+
     parent = file_path.parent
     if create_parents:
         try:
@@ -283,7 +322,7 @@ def _write_file(args: dict[str, object]) -> dict[str, object]:
         size_bytes = None
 
     resolved_path = _stringify_path(file_path)
-    return {
+    result: dict[str, object] = {
         "ok": True,
         "message": f"File written: {resolved_path}",
         "path": resolved_path,
@@ -291,6 +330,66 @@ def _write_file(args: dict[str, object]) -> dict[str, object]:
         "mode": "append" if append else "overwrite",
         "chars_written": chars_written,
         "size_bytes": size_bytes,
+    }
+    if send_to_telegram:
+        document_payload, document_error = _build_telegram_document_for_path(
+            file_path=file_path,
+            telegram_filename=telegram_filename,
+            telegram_caption=telegram_caption,
+        )
+        if document_error is not None:
+            result["message"] = f"{result['message']} (telegram export skipped: {document_error})"
+            result["telegram_export_error"] = document_error
+        elif document_payload is not None:
+            result["telegram_documents"] = [document_payload]
+            result["telegram_documents_count"] = 1
+    return result
+
+
+def _send_file(args: dict[str, object]) -> dict[str, object]:
+    file_path, path_error = _parse_path_arg(args=args, key="path")
+    if path_error:
+        return {"ok": False, "message": path_error}
+
+    telegram_filename, filename_error = _parse_optional_string_arg(
+        args.get("telegram_filename"),
+        key="telegram_filename",
+    )
+    if filename_error:
+        return {"ok": False, "message": filename_error}
+    telegram_caption, caption_error = _parse_optional_string_arg(
+        args.get("telegram_caption"),
+        key="telegram_caption",
+    )
+    if caption_error:
+        return {"ok": False, "message": caption_error}
+
+    assert file_path is not None
+
+    if not file_path.exists():
+        return {"ok": False, "message": f"File does not exist: {_stringify_path(file_path)}"}
+    if not file_path.is_file():
+        return {"ok": False, "message": f"Path is not a file: {_stringify_path(file_path)}"}
+
+    document_payload, document_error = _build_telegram_document_for_path(
+        file_path=file_path,
+        telegram_filename=telegram_filename,
+        telegram_caption=telegram_caption,
+    )
+    if document_error is not None or document_payload is None:
+        return {
+            "ok": False,
+            "message": f"Unable to prepare file for Telegram: {document_error or 'unknown error'}",
+        }
+
+    resolved_path = _stringify_path(file_path)
+    return {
+        "ok": True,
+        "message": f"File prepared for Telegram delivery: {resolved_path}",
+        "path": resolved_path,
+        "size_bytes": document_payload.get("size_bytes"),
+        "telegram_documents_count": 1,
+        "telegram_documents": [document_payload],
     }
 
 
@@ -396,6 +495,52 @@ def _parse_bool_arg(
         if normalized in {"0", "false", "no", "off"}:
             return False, None
     return None, f"{key} must be a boolean."
+
+
+def _parse_optional_string_arg(
+    raw_value: object,
+    *,
+    key: str,
+) -> tuple[str | None, str | None]:
+    if raw_value is None:
+        return None, None
+    if not isinstance(raw_value, str):
+        return None, f"{key} must be a string."
+    normalized = raw_value.strip()
+    return normalized or None, None
+
+
+def _build_telegram_document_for_path(
+    *,
+    file_path: Path,
+    telegram_filename: str | None,
+    telegram_caption: str | None,
+) -> tuple[dict[str, object] | None, str | None]:
+    try:
+        size_bytes = file_path.stat().st_size
+    except OSError as exc:
+        return None, f"unable to read file metadata: {exc}"
+
+    if size_bytes > _MAX_TELEGRAM_DOCUMENT_BYTES:
+        return (
+            None,
+            f"file is too large for telegram payload ({size_bytes} bytes, max {_MAX_TELEGRAM_DOCUMENT_BYTES})",
+        )
+
+    try:
+        content_bytes = file_path.read_bytes()
+    except OSError as exc:
+        return None, f"unable to read file bytes: {exc}"
+
+    filename = telegram_filename or file_path.name
+    payload = {
+        "filename": filename,
+        "caption": telegram_caption or "",
+        "content_base64": base64.b64encode(content_bytes).decode("ascii"),
+        "size_bytes": len(content_bytes),
+        "source_path": _stringify_path(file_path),
+    }
+    return payload, None
 
 
 def _entry_sort_key(path: Path) -> tuple[int, str]:

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
+import binascii
+from io import BytesIO
 import json
 
-from telegram import Update
+from telegram import InputFile, Update
 from telegram.ext import ContextTypes
 
 from ai_assistant.providers.remote.remote_device_service import AccessDeniedError
@@ -12,6 +15,7 @@ _FILESYSTEM_PERMISSION_BY_COMMAND = {
     "filesystem.list_directory": "remote.filesystem.list_directory",
     "filesystem.file_info": "remote.filesystem.read_file",
     "filesystem.read_file": "remote.filesystem.read_file",
+    "filesystem.send_file": "remote.filesystem.read_file",
     "filesystem.write_file": "remote.filesystem.write_file",
 }
 
@@ -37,8 +41,8 @@ async def handle_pc_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE
             "- /pc_run media.play_pause\n"
             '- /pc_run mpc.audio_set_language {"language":"ru"}\n'
             '- /pc_run filesystem.list_directory {"path":"C:\\\\Users\\\\Public"}\n'
-            '- /pc_run filesystem.read_file {"path":"C:\\\\tmp\\\\note.txt"}\n'
-            '- /pc_run filesystem.write_file {"path":"C:\\\\tmp\\\\note.txt","content":"hello","append":false}'
+            '- /pc_run filesystem.send_file {"path":"C:\\\\tmp\\\\report.pdf"}\n'
+            '- /pc_run filesystem.write_file {"path":"C:\\\\tmp\\\\note.txt","content":"hello","append":false,"send_to_telegram":true}'
         )
         return
 
@@ -77,6 +81,57 @@ async def handle_pc_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.effective_message.reply_text(f"Remote command failed: {exc}")
         return
 
-    await update.effective_message.reply_text(
-        "Remote command result:\n" + json.dumps(result, ensure_ascii=False, indent=2)
+    sanitized_result = await _send_telegram_documents_from_result(
+        message=update.effective_message,
+        result=result,
     )
+    await update.effective_message.reply_text(
+        "Remote command result:\n" + json.dumps(sanitized_result, ensure_ascii=False, indent=2)
+    )
+
+
+async def _send_telegram_documents_from_result(
+    *,
+    message: object,
+    result: dict[str, object],
+) -> dict[str, object]:
+    sanitized = dict(result)
+    raw_documents = sanitized.pop("telegram_documents", None)
+    if not isinstance(raw_documents, list):
+        return sanitized
+
+    sent_count = 0
+    skipped_count = 0
+    for item in raw_documents:
+        if not isinstance(item, dict):
+            skipped_count += 1
+            continue
+        filename = str(item.get("filename", "")).strip()
+        content_base64 = str(item.get("content_base64", "")).strip()
+        caption = str(item.get("caption", "")).strip()
+        if not filename or not content_base64:
+            skipped_count += 1
+            continue
+
+        try:
+            content = base64.b64decode(content_base64, validate=True)
+        except (binascii.Error, ValueError):
+            skipped_count += 1
+            continue
+
+        input_file = InputFile(BytesIO(content), filename=filename)
+        try:
+            await message.reply_document(
+                document=input_file,
+                caption=caption or None,
+            )
+        except Exception:
+            skipped_count += 1
+            continue
+        sent_count += 1
+
+    if sent_count:
+        sanitized["telegram_documents_sent"] = sent_count
+    if skipped_count:
+        sanitized["telegram_documents_skipped"] = skipped_count
+    return sanitized

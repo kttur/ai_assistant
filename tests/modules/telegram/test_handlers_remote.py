@@ -1,4 +1,5 @@
 import asyncio
+import base64
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -81,6 +82,31 @@ class FakeRemoteDeviceService:
 
     async def unlink_client(self, *, owner_user_id: int, client_id: str) -> None:
         self.unlinked.append((owner_user_id, client_id))
+
+
+class FakeRemoteHubWithDocument(FakeRemoteHub):
+    async def execute_user_remote_command(
+        self,
+        *,
+        user_id: int,
+        command: str,
+        args: dict[str, object],
+    ) -> dict[str, object]:
+        del args
+        self.executed.append((user_id, "default", command))
+        payload = base64.b64encode(b"hello").decode("ascii")
+        return {
+            "ok": True,
+            "client_id": "pc-1",
+            "message": "file prepared",
+            "telegram_documents": [
+                {
+                    "filename": "hello.txt",
+                    "caption": "generated",
+                    "content_base64": payload,
+                }
+            ],
+        }
 
 
 
@@ -262,3 +288,35 @@ def test_handle_pc_run_allows_filesystem_write_with_permission() -> None:
 
     assert hub.executed == [(101, "default", "filesystem.write_file")]
     assert "Remote command result:" in update.effective_message.replies[0]
+
+
+def test_handle_pc_run_sends_telegram_document_from_remote_result() -> None:
+    assistant = FakeAssistantService()
+    permissions = FakePermissionChecker(
+        allowed={
+            (101, "general", "usage"),
+            (101, "command", "pc_run"),
+            (101, "assistant", "remote.filesystem.read_file"),
+        }
+    )
+    hub = FakeRemoteHubWithDocument()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        permission_checker=permissions,
+        remote_ws_hub=hub,
+    )
+    update = FakeUpdate(user_id=101)
+    context = SimpleNamespace(
+        args=[
+            "filesystem.send_file",
+            '{"path":"C:\\\\tmp\\\\hello.txt"}',
+        ]
+    )
+
+    asyncio.run(handlers.handle_pc_run(update, context))
+
+    assert hub.executed == [(101, "default", "filesystem.send_file")]
+    assert len(update.effective_message.documents) == 1
+    assert update.effective_message.documents[0]["filename"] == "hello.txt"
+    assert "telegram_documents_sent" in update.effective_message.replies[0]
+    assert "content_base64" not in update.effective_message.replies[0]

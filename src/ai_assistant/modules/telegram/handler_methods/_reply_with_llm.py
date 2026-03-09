@@ -82,6 +82,10 @@ async def _reply_with_llm(
                 pass
 
     logger.info("Telegram LLM request completed: user_id=%s reply_chars=%d", user_id, len(reply.text))
-    await self._send_llm_reply(update=update, text=reply.text)
+    await self._send_llm_reply(
+        update=update,
+        text=reply.text,
+        documents=getattr(reply, "documents", ()),
+    )
 
 

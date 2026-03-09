@@ -318,10 +318,10 @@ context
 ## Largest Python Files in `src`
 
 - `src\ai_assistant\providers\llm\user_selectable_provider.py`: 1169 lines
+- `src\ai_assistant\providers\system\skills\filesystem_skill.py`: 562 lines
 - `src\ai_assistant\providers\remote\ws_hub.py`: 518 lines
-- `src\ai_assistant\core\service.py`: 438 lines
+- `src\ai_assistant\core\service.py`: 516 lines
 - `src\ai_assistant\providers\llm\auto_router.py`: 426 lines
-- `src\ai_assistant\providers\system\skills\filesystem_skill.py`: 417 lines
 - `src\ai_assistant\config\settings.py`: 325 lines
 - `src\ai_assistant\providers\remote\postgres_remote_device_store.py`: 324 lines
 - `src\ai_assistant\modules\telegram\handler_methods\handle_settings_callback.py`: 308 lines
@@ -337,11 +337,11 @@ context
 
 - `tests\providers\llm\test_user_selectable_provider.py`: 884 lines
 - `tests\modules\telegram\test_handlers_settings.py`: 519 lines
-- `tests\modules\telegram\test_handlers_basic.py`: 359 lines
-- `tests\modules\telegram\_shared.py`: 341 lines
-- `tests\core\test_assistant_service.py`: 289 lines
+- `tests\modules\telegram\test_handlers_basic.py`: 390 lines
+- `tests\modules\telegram\_shared.py`: 353 lines
+- `tests\core\test_assistant_service.py`: 348 lines
+- `tests\modules\telegram\test_handlers_remote.py`: 322 lines
 - `tests\providers\llm\test_auto_router.py`: 284 lines
-- `tests\modules\telegram\test_handlers_remote.py`: 264 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\config\test_settings.py`: 221 lines
 - `tests\modules\telegram\test_handlers_media.py`: 206 lines

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 
 from ai_assistant.core.service import AssistantService
 from ai_assistant.providers.memory.in_memory_store import InMemoryStore
@@ -49,6 +50,38 @@ class FakeCommandExecutor:
     ) -> dict[str, object]:
         self.calls.append((user_id, command, args))
         return {"ok": True, "message": "Playback toggled."}
+
+
+class FileReturningCommandExecutor(FakeCommandExecutor):
+    async def get_command_catalog(self, user_id: int | None = None) -> list[dict[str, object]]:
+        del user_id
+        return [
+            {
+                "command": "filesystem.write_file",
+                "description": "Write file.",
+                "args": {"path": "str", "content": "str", "send_to_telegram": "bool"},
+            }
+        ]
+
+    async def execute_command(
+        self,
+        command: str,
+        args: dict[str, object],
+        user_id: int | None = None,
+    ) -> dict[str, object]:
+        self.calls.append((user_id, command, args))
+        encoded = base64.b64encode(b"hello").decode("ascii")
+        return {
+            "ok": True,
+            "message": "File created.",
+            "telegram_documents": [
+                {
+                    "filename": "hello.txt",
+                    "caption": "generated",
+                    "content_base64": encoded,
+                }
+            ],
+        }
 
 
 class FakePermissionChecker:
@@ -287,3 +320,29 @@ def test_admin_telegram_id_bypasses_assistant_permissions() -> None:
 
     assert reply.text == "Done for admin."
     assert executor.calls == [(999, "media.play_pause", {})]
+
+
+def test_service_collects_telegram_documents_from_tool_results() -> None:
+    llm = SequencedLLMProvider(
+        responses=[
+            '<tool_call>{"command":"filesystem.write_file","args":{"path":"C:/tmp/hello.txt","content":"hello","send_to_telegram":true}}</tool_call>',
+            "File is ready.",
+        ]
+    )
+    store = InMemoryStore()
+    executor = FileReturningCommandExecutor()
+    service = AssistantService(
+        llm_provider=llm,
+        memory_store=store,
+        command_executor=executor,
+    )
+
+    reply = asyncio.run(service.process_text(user_id=42, text="create hello file"))
+
+    assert reply.text == "File is ready."
+    assert len(reply.documents) == 1
+    assert reply.documents[0].filename == "hello.txt"
+    assert reply.documents[0].content == b"hello"
+    assert reply.documents[0].caption == "generated"
+    assert "telegram_documents_count" in llm.prompts[1]
+    assert "content_base64" not in llm.prompts[1]

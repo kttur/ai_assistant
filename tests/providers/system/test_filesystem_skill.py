@@ -125,3 +125,44 @@ def test_filesystem_skill_requires_permissioned_write_payload(tmp_path: Path) ->
     assert "content must be a string" in str(no_content["message"])
     assert missing_parent["ok"] is False
     assert "Parent directory does not exist" in str(missing_parent["message"])
+
+
+def test_filesystem_skill_can_prepare_existing_file_for_telegram(tmp_path: Path) -> None:
+    file_path = tmp_path / "hello.txt"
+    file_path.write_text("hello", encoding="utf-8")
+    skill = build_filesystem_skill()
+
+    result = skill.execute(
+        "filesystem.send_file",
+        {"path": str(file_path), "telegram_caption": "doc"},
+    )
+
+    assert result["ok"] is True
+    assert result["telegram_documents_count"] == 1
+    documents = result["telegram_documents"]
+    assert isinstance(documents, list)
+    assert documents[0]["filename"] == "hello.txt"
+    assert documents[0]["caption"] == "doc"
+    assert documents[0]["content_base64"]
+
+
+def test_filesystem_skill_can_write_and_prepare_file_for_telegram(tmp_path: Path) -> None:
+    file_path = tmp_path / "generated.txt"
+    skill = build_filesystem_skill()
+
+    result = skill.execute(
+        "filesystem.write_file",
+        {
+            "path": str(file_path),
+            "content": "hello",
+            "send_to_telegram": True,
+            "telegram_filename": "result.txt",
+        },
+    )
+
+    assert result["ok"] is True
+    assert result["telegram_documents_count"] == 1
+    documents = result["telegram_documents"]
+    assert isinstance(documents, list)
+    assert documents[0]["filename"] == "result.txt"
+    assert file_path.read_text(encoding="utf-8") == "hello"

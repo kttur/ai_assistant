@@ -37,6 +37,7 @@ class FakeMessage:
         self.text = text
         self.reply_to_message = None
         self.replies: list[str] = []
+        self.documents: list[dict[str, object]] = []
         self.reply_markup = None
         self.reply_kwargs: list[dict[str, object]] = []
 
@@ -44,6 +45,17 @@ class FakeMessage:
         self.replies.append(text)
         self.reply_markup = reply_markup
         self.reply_kwargs.append(kwargs)
+
+    async def reply_document(self, document, caption: str | None = None, **kwargs) -> None:
+        filename = str(getattr(document, "filename", "")).strip() or None
+        self.documents.append(
+            {
+                "document": document,
+                "filename": filename,
+                "caption": caption,
+                "kwargs": kwargs,
+            }
+        )
 
 
 class FakeUser:

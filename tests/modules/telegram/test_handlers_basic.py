@@ -1,4 +1,5 @@
 from tests.modules.telegram._shared import *
+from ai_assistant.core.models import AssistantDocument
 
 def test_handle_ping_replies_pong() -> None:
     assistant = FakeAssistantService()
@@ -251,6 +252,36 @@ def test_handle_text_message_splits_long_llm_reply_into_chunks() -> None:
         kwargs.get("disable_web_page_preview") is True
         for kwargs in update.effective_message.reply_kwargs
     )
+
+
+def test_handle_text_message_sends_documents_from_llm_tool_results() -> None:
+    class DocumentReplyAssistant(FakeAssistantService):
+        async def process_text(self, user_id: int, text: str):
+            self.process_calls.append((user_id, text))
+            return SimpleNamespace(
+                user_id=user_id,
+                text="done",
+                documents=(
+                    AssistantDocument(
+                        filename="note.txt",
+                        content=b"hello",
+                        caption="generated",
+                    ),
+                ),
+            )
+
+    assistant = DocumentReplyAssistant()
+    handlers = TelegramHandlers(assistant_service=assistant)
+    update = FakeUpdate(user_id=101, text="сделай файл")
+    context = SimpleNamespace(args=[])
+
+    asyncio.run(handlers.handle_text_message(update, context))
+
+    assert assistant.process_calls == [(101, "сделай файл")]
+    assert update.effective_message.replies[0] == "done"
+    assert len(update.effective_message.documents) == 1
+    assert update.effective_message.documents[0]["filename"] == "note.txt"
+    assert update.effective_message.documents[0]["caption"] == "generated"
 
 
 def test_terminal_mode_routes_text_to_terminal() -> None:

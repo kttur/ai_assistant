@@ -20,7 +20,15 @@ class UserMessage:
 class AssistantReply:
     user_id: int
     text: str
+    documents: tuple["AssistantDocument", ...] = ()
     timestamp: datetime = field(default_factory=_utc_now)
+
+
+@dataclass(slots=True, frozen=True)
+class AssistantDocument:
+    filename: str
+    content: bytes
+    caption: str = ""
 
 
 @dataclass(slots=True, frozen=True)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 import re
@@ -12,7 +14,7 @@ from ai_assistant.core.interfaces import (
     PermissionChecker,
     UserSettingsStore,
 )
-from ai_assistant.core.models import AssistantReply, ConversationMessage, UserMessage
+from ai_assistant.core.models import AssistantDocument, AssistantReply, ConversationMessage, UserMessage
 from ai_assistant.logging_utils import text_preview
 
 _TOOL_CALL_PATTERNS = (
@@ -22,6 +24,8 @@ _TOOL_CALL_PATTERNS = (
     # Some models emit bare command JSON wrapped in Telegram HTML code tags.
     re.compile(r"<code>\s*(\{.*?\})\s*</code>", re.DOTALL | re.IGNORECASE),
 )
+_MAX_TELEGRAM_DOCUMENTS_PER_TURN = 3
+_MAX_TELEGRAM_DOCUMENT_BYTES = 20 * 1024 * 1024
 logger = logging.getLogger(__name__)
 
 
@@ -89,6 +93,7 @@ class AssistantService:
 
         if tool_calls and self._command_executor:
             tool_results: list[dict[str, object]] = []
+            documents: list[AssistantDocument] = []
             for call in tool_calls[: self._max_tool_calls_per_turn]:
                 logger.debug(
                     "Executing tool call candidate: user_id=%s command=%s args=%s",
@@ -138,11 +143,17 @@ class AssistantService:
                         call.command,
                         execution,
                     )
+                extracted_documents, execution_for_prompt = self._extract_telegram_documents(
+                    execution,
+                    command=call.command,
+                )
+                if extracted_documents:
+                    documents.extend(extracted_documents)
                 tool_results.append(
                     {
                         "command": call.command,
                         "args": call.args,
-                        "result": execution,
+                        "result": execution_for_prompt,
                     }
                 )
 
@@ -161,6 +172,7 @@ class AssistantService:
             )
         else:
             reply_text = first_reply
+            documents = []
 
         await self._memory_store.save_assistant_message(user_id=user_id, text=reply_text)
         logger.info(
@@ -168,7 +180,11 @@ class AssistantService:
             user_id,
             len(reply_text),
         )
-        return AssistantReply(user_id=user_id, text=reply_text)
+        return AssistantReply(
+            user_id=user_id,
+            text=reply_text,
+            documents=tuple(documents),
+        )
 
     async def clear_context(self, user_id: int) -> None:
         await self._memory_store.clear_conversation(user_id=user_id)
@@ -299,6 +315,68 @@ class AssistantService:
             lines.insert(3, self._build_language_instruction(preferred_language))
             lines.insert(4, "")
         return "\n".join(lines)
+
+    def _extract_telegram_documents(
+        self,
+        execution: dict[str, object],
+        *,
+        command: str,
+    ) -> tuple[list[AssistantDocument], dict[str, object]]:
+        sanitized = dict(execution)
+        raw_documents = sanitized.pop("telegram_documents", None)
+        if not isinstance(raw_documents, list):
+            return [], sanitized
+
+        documents: list[AssistantDocument] = []
+        skipped = 0
+        for index, item in enumerate(raw_documents):
+            if len(documents) >= _MAX_TELEGRAM_DOCUMENTS_PER_TURN:
+                skipped += 1
+                continue
+            if not isinstance(item, dict):
+                skipped += 1
+                continue
+
+            filename = str(item.get("filename", "")).strip()
+            content_base64 = str(item.get("content_base64", "")).strip()
+            caption = str(item.get("caption", "")).strip()
+            if not filename or not content_base64:
+                skipped += 1
+                continue
+
+            try:
+                content = base64.b64decode(content_base64, validate=True)
+            except (binascii.Error, ValueError):
+                logger.warning(
+                    "Ignoring invalid telegram document payload: user_command=%s index=%s",
+                    command,
+                    index,
+                )
+                skipped += 1
+                continue
+            if len(content) > _MAX_TELEGRAM_DOCUMENT_BYTES:
+                logger.warning(
+                    "Ignoring oversized telegram document payload: user_command=%s index=%s bytes=%d",
+                    command,
+                    index,
+                    len(content),
+                )
+                skipped += 1
+                continue
+
+            documents.append(
+                AssistantDocument(
+                    filename=filename,
+                    content=content,
+                    caption=caption,
+                )
+            )
+
+        if documents:
+            sanitized["telegram_documents_count"] = len(documents)
+        if skipped:
+            sanitized["telegram_documents_skipped"] = skipped
+        return documents, sanitized
 
     async def _get_preferred_reply_language(self, user_id: int) -> str | None:
         if not self._user_settings_store:
