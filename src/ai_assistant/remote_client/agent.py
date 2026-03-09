@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import uuid
 
 from ai_assistant.core.interfaces import AssistantCommandExecutor
+from ai_assistant.logging_utils import text_preview
 from ai_assistant.providers.remote.ws_protocol import decode_message, encode_message
 from ai_assistant.remote_client.state_store import ClientState, FileClientStateStore
 
@@ -38,11 +40,35 @@ class RemoteClientAgent:
         self._ping_timeout_seconds = max(ping_timeout_seconds, 1.0)
 
         self._state = self._load_or_create_state()
+        logger.debug(
+            "RemoteClientAgent initialized: server_url=%s server_id=%s client_id=%s platform=%s "
+            "reconnect=[%.1fs..%.1fs] ping=[%.1fs/%.1fs] linked=%s",
+            self._server_url,
+            self._server_id,
+            self._state.client_id,
+            self._platform,
+            self._reconnect_min_seconds,
+            self._reconnect_max_seconds,
+            self._ping_interval_seconds,
+            self._ping_timeout_seconds,
+            bool(self._state.auth_token),
+        )
 
     async def run_forever(self) -> None:
+        logger.info(
+            "Remote client run loop started: server_url=%s client_id=%s server_id=%s",
+            self._server_url,
+            self._state.client_id,
+            self._server_id,
+        )
         reconnect_delay = self._reconnect_min_seconds
         while True:
             try:
+                logger.debug(
+                    "Opening remote connection: client_id=%s next_retry_delay=%.1fs",
+                    self._state.client_id,
+                    reconnect_delay,
+                )
                 await self._run_connection()
                 reconnect_delay = self._reconnect_min_seconds
             except asyncio.CancelledError:
@@ -65,12 +91,27 @@ class RemoteClientAgent:
             ping_interval=self._ping_interval_seconds,
             ping_timeout=self._ping_timeout_seconds,
         ) as websocket:
+            logger.info(
+                "Remote websocket connected: server_url=%s client_id=%s",
+                self._server_url,
+                self._state.client_id,
+            )
             await self._send_hello(websocket)
 
             async for raw_message in websocket:
                 if not isinstance(raw_message, str):
+                    logger.debug(
+                        "Skipping non-text remote message: type=%s",
+                        type(raw_message).__name__,
+                    )
                     continue
                 message_type, payload, request_id = decode_message(raw_message)
+                logger.debug(
+                    "Remote message received: type=%s request_id=%s payload_keys=%s",
+                    message_type,
+                    request_id,
+                    sorted(payload.keys()),
+                )
                 if message_type == "hello_ack":
                     await self._handle_hello_ack(payload)
                     continue
@@ -82,9 +123,18 @@ class RemoteClientAgent:
                     continue
                 if message_type == "error":
                     logger.warning("Remote server error: %s", payload)
+                    continue
+                logger.debug("Ignoring unsupported remote message type: %s", message_type)
 
     async def _send_hello(self, websocket: object) -> None:
         commands = await self._command_executor.get_command_catalog(user_id=None)
+        logger.debug(
+            "Sending hello: client_id=%s server_id=%s platform=%s commands=%d",
+            self._state.client_id,
+            self._server_id,
+            self._platform,
+            len(commands),
+        )
         message = encode_message(
             message_type="hello",
             payload={
@@ -100,6 +150,11 @@ class RemoteClientAgent:
 
     async def _handle_hello_ack(self, payload: dict[str, object]) -> None:
         status = str(payload.get("status", "")).strip().lower()
+        logger.debug(
+            "Remote hello_ack received: status=%s payload_preview=%s",
+            status,
+            _json_preview(payload),
+        )
         if status == "authenticated":
             logger.info(
                 "Remote client authenticated: client_id=%s owner_user_id=%s",
@@ -117,11 +172,13 @@ class RemoteClientAgent:
             if expires_at:
                 print(f"Code expires at: {expires_at}")
             print("=" * 80)
+            logger.info("Remote client requires linking: code=%s expires_at=%s", code, expires_at)
 
     async def _handle_link_completed(self, payload: dict[str, object]) -> None:
         auth_token = str(payload.get("auth_token", "")).strip()
         client_id = str(payload.get("client_id", self._state.client_id)).strip().lower()
         if not auth_token:
+            logger.debug("Ignoring link_completed without auth_token.")
             return
 
         self._state = ClientState(
@@ -130,7 +187,11 @@ class RemoteClientAgent:
             server_id=self._server_id,
         )
         self._state_store.save(self._state)
-        logger.info("Remote client linked successfully: client_id=%s", self._state.client_id)
+        logger.info(
+            "Remote client linked successfully: client_id=%s token_received=%s",
+            self._state.client_id,
+            bool(auth_token),
+        )
 
     async def _handle_command_request(
         self,
@@ -139,12 +200,20 @@ class RemoteClientAgent:
         request_id: str | None,
     ) -> None:
         if request_id is None:
+            logger.warning("Ignoring command_request without request_id: payload=%s", _json_preview(payload))
             return
 
         command = str(payload.get("command", "")).strip().lower()
         args_raw = payload.get("args")
         wait_for_response = bool(payload.get("wait_for_response", True))
         args = args_raw if isinstance(args_raw, dict) else {}
+        logger.debug(
+            "Remote command request received: request_id=%s command=%s wait_for_response=%s args=%s",
+            request_id,
+            command,
+            wait_for_response,
+            _json_preview(args),
+        )
 
         if command == "client.unlink_server":
             self._state = ClientState(
@@ -154,12 +223,28 @@ class RemoteClientAgent:
             )
             self._state_store.save(self._state)
             result: dict[str, object] = {"ok": True, "message": "Server link removed on client."}
+            logger.info("Remote unlink command handled: client_id=%s", self._state.client_id)
         else:
-            result = await self._command_executor.execute_command(
-                command=command,
-                args=args,
-                user_id=None,
-            )
+            try:
+                result = await self._command_executor.execute_command(
+                    command=command,
+                    args=args,
+                    user_id=None,
+                )
+            except Exception as exc:
+                logger.exception(
+                    "Remote command execution failed: request_id=%s command=%s error=%s",
+                    request_id,
+                    command,
+                    exc,
+                )
+                result = {"ok": False, "message": f"Command execution error: {exc}"}
+        logger.debug(
+            "Remote command execution finished: request_id=%s command=%s result=%s",
+            request_id,
+            command,
+            _json_preview(result),
+        )
 
         if wait_for_response:
             message = encode_message(
@@ -168,6 +253,17 @@ class RemoteClientAgent:
                 payload=result,
             )
             await websocket.send(message)  # type: ignore[attr-defined]
+            logger.debug(
+                "Remote command response sent: request_id=%s command=%s",
+                request_id,
+                command,
+            )
+        else:
+            logger.debug(
+                "Remote command response skipped (wait_for_response=false): request_id=%s command=%s",
+                request_id,
+                command,
+            )
 
     def clear_link(self) -> None:
         self._state = ClientState(
@@ -176,6 +272,7 @@ class RemoteClientAgent:
             server_id=self._state.server_id,
         )
         self._state_store.save(self._state)
+        logger.info("Remote client link cleared locally: client_id=%s", self._state.client_id)
 
     def _load_or_create_state(self) -> ClientState:
         state = self._state_store.load()
@@ -183,6 +280,12 @@ class RemoteClientAgent:
             if not state.server_id:
                 state.server_id = self._server_id
                 self._state_store.save(state)
+            logger.debug(
+                "Loaded remote client state: client_id=%s server_id=%s linked=%s",
+                state.client_id,
+                state.server_id,
+                bool(state.auth_token),
+            )
             return state
 
         new_state = ClientState(
@@ -191,4 +294,17 @@ class RemoteClientAgent:
             server_id=self._server_id,
         )
         self._state_store.save(new_state)
+        logger.info(
+            "Created new remote client state: client_id=%s server_id=%s",
+            new_state.client_id,
+            new_state.server_id,
+        )
         return new_state
+
+
+def _json_preview(value: object, *, max_len: int = 500) -> str:
+    try:
+        serialized = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except (TypeError, ValueError):
+        serialized = repr(value)
+    return text_preview(serialized, max_len=max_len)

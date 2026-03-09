@@ -264,31 +264,33 @@ tests
 │       ├── test_handlers_permissions.py
 │       ├── test_handlers_remote.py
 │       └── test_handlers_settings.py
-└── providers
-    ├── llm
-    │   ├── test_anthropic_provider.py
-    │   ├── test_arbiter.py
-    │   ├── test_auto_router.py
-    │   ├── test_auto_router_policy.py
-    │   ├── test_auto_router_types.py
-    │   ├── test_model_health_registry.py
-    │   ├── test_model_manifest.py
-    │   ├── test_ollama_provider.py
-    │   └── test_user_selectable_provider.py
-    ├── permissions
-    │   └── test_in_memory_permission_checker.py
-    ├── remote
-    │   └── test_remote_device_service.py
-    ├── settings
-    │   └── test_in_memory_user_settings_store.py
-    ├── system
-    │   ├── test_assistant_command_executor.py
-    │   ├── test_filesystem_skill.py
-    │   ├── test_hybrid_command_executor.py
-    │   ├── test_system_skill_filter.py
-    │   └── test_voicemeeter_output_controller.py
-    └── terminal
-        └── test_shell_terminal_executor.py
+├── providers
+│   ├── llm
+│   │   ├── test_anthropic_provider.py
+│   │   ├── test_arbiter.py
+│   │   ├── test_auto_router.py
+│   │   ├── test_auto_router_policy.py
+│   │   ├── test_auto_router_types.py
+│   │   ├── test_model_health_registry.py
+│   │   ├── test_model_manifest.py
+│   │   ├── test_ollama_provider.py
+│   │   └── test_user_selectable_provider.py
+│   ├── permissions
+│   │   └── test_in_memory_permission_checker.py
+│   ├── remote
+│   │   └── test_remote_device_service.py
+│   ├── settings
+│   │   └── test_in_memory_user_settings_store.py
+│   ├── system
+│   │   ├── test_assistant_command_executor.py
+│   │   ├── test_filesystem_skill.py
+│   │   ├── test_hybrid_command_executor.py
+│   │   ├── test_system_skill_filter.py
+│   │   └── test_voicemeeter_output_controller.py
+│   └── terminal
+│       └── test_shell_terminal_executor.py
+└── remote_client
+    └── test_agent.py
 ```
 
 ### `docs`
@@ -324,6 +326,7 @@ context
 - `src\ai_assistant\providers\llm\auto_router.py`: 426 lines
 - `src\ai_assistant\config\settings.py`: 325 lines
 - `src\ai_assistant\providers\remote\postgres_remote_device_store.py`: 324 lines
+- `src\ai_assistant\remote_client\agent.py`: 310 lines
 - `src\ai_assistant\modules\telegram\handler_methods\handle_settings_callback.py`: 308 lines
 - `src\ai_assistant\providers\system\voicemeeter_output_controller.py`: 263 lines
 - `src\ai_assistant\providers\system\mpc_hc_controller.py`: 258 lines
@@ -331,7 +334,6 @@ context
 - `src\ai_assistant\providers\remote\remote_device_service.py`: 233 lines
 - `src\ai_assistant\providers\settings\in_memory_user_settings_store.py`: 232 lines
 - `src\ai_assistant\modules\telegram\handlers.py`: 224 lines
-- `src\ai_assistant\devtools\sync_docs.py`: 223 lines
 
 ## Largest Python Files in `tests`
 
