@@ -285,6 +285,7 @@ tests
 │   │   ├── test_assistant_command_executor.py
 │   │   ├── test_filesystem_skill.py
 │   │   ├── test_hybrid_command_executor.py
+│   │   ├── test_mpc_hc_controller.py
 │   │   ├── test_system_skill_filter.py
 │   │   └── test_voicemeeter_output_controller.py
 │   └── terminal
@@ -323,10 +324,10 @@ context
 - `src\ai_assistant\providers\system\skills\filesystem_skill.py`: 926 lines
 - `src\ai_assistant\providers\remote\ws_hub.py`: 518 lines
 - `src\ai_assistant\core\service.py`: 516 lines
+- `src\ai_assistant\providers\system\mpc_hc_controller.py`: 499 lines
 - `src\ai_assistant\providers\llm\auto_router.py`: 426 lines
 - `src\ai_assistant\config\settings.py`: 325 lines
 - `src\ai_assistant\providers\remote\postgres_remote_device_store.py`: 324 lines
-- `src\ai_assistant\providers\system\mpc_hc_controller.py`: 313 lines
 - `src\ai_assistant\remote_client\agent.py`: 310 lines
 - `src\ai_assistant\modules\telegram\handler_methods\handle_settings_callback.py`: 308 lines
 - `src\ai_assistant\providers\system\voicemeeter_output_controller.py`: 263 lines
