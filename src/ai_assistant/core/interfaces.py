@@ -192,3 +192,6 @@ class MPCController(Protocol):
 
     def subtitle_set_language(self, language: str) -> bool:
         ...
+
+    def set_fullscreen(self, enabled: bool) -> bool:
+        ...

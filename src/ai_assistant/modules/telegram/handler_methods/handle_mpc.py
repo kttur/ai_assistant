@@ -12,6 +12,8 @@ from ai_assistant.modules.telegram.handler_constants import (
     MPC_AUDIO_NEXT,
     MPC_AUDIO_PREVIOUS,
     MPC_AUDIO_RU,
+    MPC_FULLSCREEN_OFF,
+    MPC_FULLSCREEN_ON,
     MPC_SUBTITLE_EN,
     MPC_SUBTITLE_NEXT,
     MPC_SUBTITLE_PREVIOUS,

@@ -12,6 +12,8 @@ from ai_assistant.modules.telegram.handler_constants import (
     MPC_AUDIO_NEXT,
     MPC_AUDIO_PREVIOUS,
     MPC_AUDIO_RU,
+    MPC_FULLSCREEN_OFF,
+    MPC_FULLSCREEN_ON,
     MPC_SUBTITLE_EN,
     MPC_SUBTITLE_NEXT,
     MPC_SUBTITLE_PREVIOUS,
@@ -54,6 +56,10 @@ def _mpc_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton("Сабы RU", callback_data=MPC_SUBTITLE_RU),
                 InlineKeyboardButton("Сабы EN", callback_data=MPC_SUBTITLE_EN),
+            ],
+            [
+                InlineKeyboardButton("Full ON", callback_data=MPC_FULLSCREEN_ON),
+                InlineKeyboardButton("Full OFF", callback_data=MPC_FULLSCREEN_OFF),
             ],
         ]
     )

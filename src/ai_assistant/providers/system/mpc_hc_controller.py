@@ -32,6 +32,15 @@ EN_KEYWORDS = (" english", "англ", " англий", " en ", "(en", "[en", "e
 
 AUDIO_STREAM_HINTS = ("ac3", "aac", "eac3", "dts", "flac", "truehd", "stereo", "mono", "5.1", "7.1")
 SUBTITLE_STREAM_HINTS = ("sub ", " srt", " ass", " ssa", "pgs", "vobsub", "cc", "captions")
+FULLSCREEN_KEYWORDS = (
+    "fullscreen",
+    "full screen",
+    "full-screen",
+    "во весь экран",
+    "полноэкран",
+    "полный экран",
+)
+FULLSCREEN_PATH_HINTS = ("view", "вид")
 
 
 @dataclass(slots=True)
@@ -75,6 +84,23 @@ class MpcHcController:
 
     def subtitle_set_language(self, language: str) -> bool:
         return self._set_stream_language(stream_type="subtitle", language=language)
+
+    def set_fullscreen(self, enabled: bool) -> bool:
+        hwnd = self._find_target_window()
+        if not hwnd:
+            return False
+
+        entries = self._collect_menu_entries(hwnd)
+        if not entries:
+            return False
+
+        entry = self._find_fullscreen_entry(entries)
+        if entry is None:
+            return False
+
+        if entry.checked == enabled:
+            return True
+        return self._send_command(hwnd, entry.command_id)
 
     @staticmethod
     def _normalize_text(text: str) -> str:
@@ -218,6 +244,36 @@ class MpcHcController:
             return True
         return False
 
+    def _is_fullscreen_entry(self, entry: _MenuEntry) -> bool:
+        item_text = self._normalize_text(entry.text)
+        if not self._contains_any(item_text, FULLSCREEN_KEYWORDS):
+            return False
+
+        path_text = self._normalize_text(" ".join(entry.path))
+        if not path_text.strip():
+            return True
+        return self._contains_any(path_text, FULLSCREEN_PATH_HINTS)
+
+    def _find_fullscreen_entry(self, entries: list[_MenuEntry]) -> _MenuEntry | None:
+        candidates: list[tuple[int, _MenuEntry]] = []
+        for entry in entries:
+            if not self._is_fullscreen_entry(entry):
+                continue
+
+            path_text = self._normalize_text(" ".join(entry.path))
+            score = 0
+            if self._contains_any(path_text, FULLSCREEN_PATH_HINTS):
+                score += 10
+            if entry.checked:
+                score += 1
+            candidates.append((score, entry))
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
+
     def _set_stream_language(self, stream_type: Literal["audio", "subtitle"], language: str) -> bool:
         hwnd = self._find_target_window()
         if not hwnd:
@@ -255,4 +311,3 @@ class MpcHcController:
 
         candidates.sort(key=lambda x: x[0], reverse=True)
         return self._send_command(hwnd, candidates[0][1].command_id)
-

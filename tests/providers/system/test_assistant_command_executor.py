@@ -43,6 +43,10 @@ class FakeMpcController:
         self.actions.append(f"subtitle_{language}")
         return True
 
+    def set_fullscreen(self, enabled: bool) -> bool:
+        self.actions.append("fullscreen_on" if enabled else "fullscreen_off")
+        return True
+
 
 class FakeOutputController:
     def __init__(self) -> None:
@@ -85,17 +89,21 @@ def test_command_executor_catalog_and_execution() -> None:
     commands = {item["command"] for item in catalog}
     assert "media.play_pause" in commands
     assert "mpc.audio_set_language" in commands
+    assert "mpc.fullscreen_on" in commands
+    assert "mpc.fullscreen_off" in commands
     assert "output.toggle" in commands
 
     media_result = asyncio.run(executor.execute_command("media.next_track", {}))
     mpc_result = asyncio.run(executor.execute_command("mpc.audio_set_language", {"language": "ru"}))
+    mpc_fullscreen_result = asyncio.run(executor.execute_command("mpc.fullscreen_on", {}))
     output_result = asyncio.run(executor.execute_command("output.toggle", {}))
 
     assert media_result["ok"] is True
     assert mpc_result["ok"] is True
+    assert mpc_fullscreen_result["ok"] is True
     assert output_result["ok"] is True
     assert media.actions == ["next_track"]
-    assert mpc.actions == ["audio_ru"]
+    assert mpc.actions == ["audio_ru", "fullscreen_on"]
     assert output.actions == ["toggle"]
 
 

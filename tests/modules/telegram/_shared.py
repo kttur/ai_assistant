@@ -7,6 +7,8 @@ from ai_assistant.modules.telegram.handlers import (
     MPC_AUDIO_PREVIOUS,
     MPC_AUDIO_NEXT,
     MPC_AUDIO_RU,
+    MPC_FULLSCREEN_OFF,
+    MPC_FULLSCREEN_ON,
     MPC_SUBTITLE_NEXT,
     MPC_SUBTITLE_RU,
     PLAYER_NEXT,
@@ -144,6 +146,10 @@ class FakeMpcController:
 
     def subtitle_set_language(self, language: str) -> bool:
         self.actions.append(f"subtitle_{language}")
+        return True
+
+    def set_fullscreen(self, enabled: bool) -> bool:
+        self.actions.append("fullscreen_on" if enabled else "fullscreen_off")
         return True
 
 

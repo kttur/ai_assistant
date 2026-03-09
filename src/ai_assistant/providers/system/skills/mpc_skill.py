@@ -15,7 +15,8 @@ def build_mpc_skill(mpc_controller: MPCController | None) -> ExecutableSkill | N
         skill_id="mpc",
         title="MPC-HC track control",
         llm_description=(
-            "Control MPC-HC audio/subtitle tracks, including next/previous and language switching."
+            "Control MPC-HC audio/subtitle tracks and fullscreen mode, including "
+            "next/previous and language switching."
         ),
         commands=(
             SkillCommandSpec(
@@ -43,6 +44,14 @@ def build_mpc_skill(mpc_controller: MPCController | None) -> ExecutableSkill | N
                 command="mpc.subtitle_set_language",
                 description="Set MPC-HC subtitle track language.",
                 args={"language": "ru|en"},
+            ),
+            SkillCommandSpec(
+                command="mpc.fullscreen_on",
+                description="Enable MPC-HC fullscreen mode.",
+            ),
+            SkillCommandSpec(
+                command="mpc.fullscreen_off",
+                description="Disable MPC-HC fullscreen mode.",
             ),
         ),
     )
@@ -101,6 +110,23 @@ def build_mpc_skill(mpc_controller: MPCController | None) -> ExecutableSkill | N
                 "message": f"MPC subtitle language set to {language}."
                 if ok
                 else f"MPC subtitle language {language} not available.",
+            }
+
+        if command == "mpc.fullscreen_on":
+            ok = mpc_controller.set_fullscreen(True)
+            return {
+                "ok": ok,
+                "message": "MPC fullscreen mode enabled."
+                if ok
+                else "MPC fullscreen enable failed.",
+            }
+        if command == "mpc.fullscreen_off":
+            ok = mpc_controller.set_fullscreen(False)
+            return {
+                "ok": ok,
+                "message": "MPC fullscreen mode disabled."
+                if ok
+                else "MPC fullscreen disable failed.",
             }
 
         return {"ok": False, "message": f"Unknown command: {command}"}

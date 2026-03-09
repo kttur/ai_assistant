@@ -12,6 +12,8 @@ from ai_assistant.modules.telegram.handler_constants import (
     MPC_AUDIO_NEXT,
     MPC_AUDIO_PREVIOUS,
     MPC_AUDIO_RU,
+    MPC_FULLSCREEN_OFF,
+    MPC_FULLSCREEN_ON,
     MPC_SUBTITLE_EN,
     MPC_SUBTITLE_NEXT,
     MPC_SUBTITLE_PREVIOUS,
@@ -66,6 +68,8 @@ async def handle_mpc_button(self, update: Update, context: ContextTypes.DEFAULT_
                 {"language": "en"},
                 "Субтитры: переключено на EN",
             ),
+            MPC_FULLSCREEN_ON: ("mpc.fullscreen_on", {}, "Полноэкранный режим: включен"),
+            MPC_FULLSCREEN_OFF: ("mpc.fullscreen_off", {}, "Полноэкранный режим: выключен"),
         }
         if callback_data is None:
             return None, {}, "Неизвестная команда."
@@ -95,6 +99,10 @@ async def handle_mpc_button(self, update: Update, context: ContextTypes.DEFAULT_
                 ok = self._mpc_controller.subtitle_set_language("ru")
             elif query.data == MPC_SUBTITLE_EN:
                 ok = self._mpc_controller.subtitle_set_language("en")
+            elif query.data == MPC_FULLSCREEN_ON:
+                ok = self._mpc_controller.set_fullscreen(True)
+            elif query.data == MPC_FULLSCREEN_OFF:
+                ok = self._mpc_controller.set_fullscreen(False)
         else:
             if self._remote_ws_hub is None or update.effective_user is None:
                 await self._answer_callback(query, "MPC-контроллер не настроен.", show_alert=True)
@@ -110,7 +118,7 @@ async def handle_mpc_button(self, update: Update, context: ContextTypes.DEFAULT_
                 await self._answer_callback(
                     query,
                     remote_error
-                    or "MPC-HC не найден, файл не открыт или нужная дорожка отсутствует.",
+                    or "MPC-HC не найден или команда не выполнена.",
                     show_alert=True,
                 )
                 return
@@ -120,7 +128,7 @@ async def handle_mpc_button(self, update: Update, context: ContextTypes.DEFAULT_
         else:
             await self._answer_callback(
                 query,
-                "MPC-HC не найден, файл не открыт или нужная дорожка отсутствует.",
+                "MPC-HC не найден или команда не выполнена.",
                 show_alert=True,
             )
     except Exception:

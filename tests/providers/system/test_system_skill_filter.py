@@ -33,6 +33,10 @@ class FakeMpcController:
     def subtitle_set_language(self, language: str) -> bool:
         return language in {"ru", "en"}
 
+    def set_fullscreen(self, enabled: bool) -> bool:
+        del enabled
+        return True
+
 
 def test_system_executor_respects_active_skill_filter() -> None:
     executor = SystemAssistantCommandExecutor(

@@ -117,6 +117,8 @@ def test_handle_mpc_shows_keyboard() -> None:
     assert keyboard is not None
     first_row_callbacks = [button.callback_data for button in keyboard.inline_keyboard[0]]
     assert first_row_callbacks == [MPC_AUDIO_PREVIOUS, MPC_AUDIO_NEXT]
+    fullscreen_row_callbacks = [button.callback_data for button in keyboard.inline_keyboard[4]]
+    assert fullscreen_row_callbacks == [MPC_FULLSCREEN_ON, MPC_FULLSCREEN_OFF]
 
 
 def test_handle_mpc_button_calls_mpc_controller() -> None:
@@ -170,6 +172,23 @@ def test_handle_mpc_button_selects_ru_subtitles() -> None:
     assert update.callback_query.answers == [("Субтитры: переключено на RU", False)]
 
 
+def test_handle_mpc_button_enables_fullscreen() -> None:
+    mpc_controller = FakeMpcController()
+    assistant = FakeAssistantService()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        mpc_controller=mpc_controller,
+    )
+    update = FakeUpdate(user_id=101)
+    update.callback_query = FakeCallbackQuery(data=MPC_FULLSCREEN_ON, message=update.effective_message)
+    context = SimpleNamespace(args=[])
+
+    asyncio.run(handlers.handle_mpc_button(update, context))
+
+    assert mpc_controller.actions == ["fullscreen_on"]
+    assert update.callback_query.answers == [("Полноэкранный режим: включен", False)]
+
+
 def test_handle_mpc_button_uses_remote_when_local_mpc_not_configured() -> None:
     assistant = FakeAssistantService()
     remote_hub = FakeRemoteHubForMedia()
@@ -185,6 +204,23 @@ def test_handle_mpc_button_uses_remote_when_local_mpc_not_configured() -> None:
 
     assert remote_hub.calls == [(101, "mpc.audio_set_language", {"language": "ru"})]
     assert update.callback_query.answers == [("Аудио: переключено на RU", False)]
+
+
+def test_handle_mpc_button_uses_remote_for_fullscreen_toggle() -> None:
+    assistant = FakeAssistantService()
+    remote_hub = FakeRemoteHubForMedia()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        remote_ws_hub=remote_hub,
+    )
+    update = FakeUpdate(user_id=101)
+    update.callback_query = FakeCallbackQuery(data=MPC_FULLSCREEN_OFF, message=update.effective_message)
+    context = SimpleNamespace(args=[])
+
+    asyncio.run(handlers.handle_mpc_button(update, context))
+
+    assert remote_hub.calls == [(101, "mpc.fullscreen_off", {})]
+    assert update.callback_query.answers == [("Полноэкранный режим: выключен", False)]
 
 
 def test_handle_mpc_button_shows_remote_error_when_remote_failed() -> None:
