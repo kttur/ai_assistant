@@ -103,6 +103,7 @@ Remote tools (when user has linked online devices) are exposed as `remote.<comma
 - example: `assistant/remote.media.play_pause`
 - filesystem commands:
   - `assistant/remote.filesystem.list_directory`
+  - `assistant/remote.filesystem.search_files`
   - `assistant/remote.filesystem.file_info`
   - `assistant/remote.filesystem.read_file`
   - `assistant/remote.filesystem.send_file`
@@ -111,6 +112,7 @@ Remote tools (when user has linked online devices) are exposed as `remote.<comma
 For `/pc_run`, filesystem commands have additional fine-grained checks:
 
 - `filesystem.list_directory` -> requires `assistant/remote.filesystem.list_directory`
+- `filesystem.search_files` -> requires `assistant/remote.filesystem.list_directory`
 - `filesystem.file_info`, `filesystem.read_file`, `filesystem.send_file` -> require `assistant/remote.filesystem.read_file`
 - `filesystem.write_file` (including `send_to_telegram=true`) -> requires `assistant/remote.filesystem.write_file`
 

@@ -13,6 +13,7 @@ from ai_assistant.providers.remote.remote_device_service import AccessDeniedErro
 
 _FILESYSTEM_PERMISSION_BY_COMMAND = {
     "filesystem.list_directory": "remote.filesystem.list_directory",
+    "filesystem.search_files": "remote.filesystem.list_directory",
     "filesystem.file_info": "remote.filesystem.read_file",
     "filesystem.read_file": "remote.filesystem.read_file",
     "filesystem.send_file": "remote.filesystem.read_file",
@@ -41,6 +42,7 @@ async def handle_pc_run(self, update: Update, context: ContextTypes.DEFAULT_TYPE
             "- /pc_run media.play_pause\n"
             '- /pc_run mpc.audio_set_language {"language":"ru"}\n'
             '- /pc_run filesystem.list_directory {"path":"C:\\\\Users\\\\Public"}\n'
+            '- /pc_run filesystem.search_files {"query":"*.mkv","path":"D:\\\\Media","max_items":50}\n'
             '- /pc_run filesystem.send_file {"path":"C:\\\\tmp\\\\report.pdf"}\n'
             '- /pc_run filesystem.write_file {"path":"C:\\\\tmp\\\\note.txt","content":"hello","append":false,"send_to_telegram":true}'
         )

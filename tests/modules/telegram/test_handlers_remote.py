@@ -216,6 +216,26 @@ def test_handle_pc_run_requires_list_permission_for_filesystem_listing() -> None
     assert "assistant/remote.filesystem.list_directory" in update.effective_message.replies[0]
 
 
+def test_handle_pc_run_requires_list_permission_for_filesystem_search() -> None:
+    assistant = FakeAssistantService()
+    permissions = FakePermissionChecker(
+        allowed={(101, "general", "usage"), (101, "command", "pc_run")}
+    )
+    hub = FakeRemoteHub()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        permission_checker=permissions,
+        remote_ws_hub=hub,
+    )
+    update = FakeUpdate(user_id=101)
+    context = SimpleNamespace(args=["filesystem.search_files", '{"query":"*.mkv","path":"D:\\\\Media"}'])
+
+    asyncio.run(handlers.handle_pc_run(update, context))
+
+    assert hub.executed == []
+    assert "assistant/remote.filesystem.list_directory" in update.effective_message.replies[0]
+
+
 def test_handle_pc_run_requires_read_permission_for_filesystem_read() -> None:
     assistant = FakeAssistantService()
     permissions = FakePermissionChecker(

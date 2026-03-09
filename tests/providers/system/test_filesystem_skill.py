@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import ai_assistant.providers.system.skills.filesystem_skill as filesystem_skill_module
 from ai_assistant.providers.system.skills.filesystem_skill import build_filesystem_skill
 
 
@@ -166,3 +167,85 @@ def test_filesystem_skill_can_write_and_prepare_file_for_telegram(tmp_path: Path
     assert isinstance(documents, list)
     assert documents[0]["filename"] == "result.txt"
     assert file_path.read_text(encoding="utf-8") == "hello"
+
+
+def test_filesystem_search_uses_es_backend_first_when_available(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    video = tmp_path / "movie.mkv"
+    video.write_text("x", encoding="utf-8")
+
+    called: list[str] = []
+
+    def run_es(**kwargs) -> list[str]:
+        del kwargs
+        called.append("es")
+        return [str(video)]
+
+    def run_gci(**kwargs) -> list[str]:
+        del kwargs
+        called.append("gci")
+        return []
+
+    def run_dir(**kwargs) -> list[str]:
+        del kwargs
+        called.append("dir")
+        return []
+
+    monkeypatch.setattr(filesystem_skill_module, "_is_search_backend_available", lambda backend: True)
+    monkeypatch.setitem(filesystem_skill_module._SEARCH_BACKEND_RUNNERS, "es", run_es)
+    monkeypatch.setitem(filesystem_skill_module._SEARCH_BACKEND_RUNNERS, "gci", run_gci)
+    monkeypatch.setitem(filesystem_skill_module._SEARCH_BACKEND_RUNNERS, "dir", run_dir)
+
+    skill = build_filesystem_skill()
+    result = skill.execute(
+        "filesystem.search_files",
+        {"query": "*.mkv", "path": str(tmp_path)},
+    )
+
+    assert result["ok"] is True
+    assert result["backend"] == "es"
+    assert called == ["es"]
+    assert result["entries"][0]["name"] == "movie.mkv"
+
+
+def test_filesystem_search_fallbacks_to_gci_when_es_fails(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    video = tmp_path / "movie.mkv"
+    video.write_text("x", encoding="utf-8")
+
+    called: list[str] = []
+
+    def run_es(**kwargs) -> list[str]:
+        del kwargs
+        called.append("es")
+        raise RuntimeError("es failed")
+
+    def run_gci(**kwargs) -> list[str]:
+        del kwargs
+        called.append("gci")
+        return [str(video)]
+
+    def run_dir(**kwargs) -> list[str]:
+        del kwargs
+        called.append("dir")
+        return []
+
+    monkeypatch.setattr(filesystem_skill_module, "_is_search_backend_available", lambda backend: True)
+    monkeypatch.setitem(filesystem_skill_module._SEARCH_BACKEND_RUNNERS, "es", run_es)
+    monkeypatch.setitem(filesystem_skill_module._SEARCH_BACKEND_RUNNERS, "gci", run_gci)
+    monkeypatch.setitem(filesystem_skill_module._SEARCH_BACKEND_RUNNERS, "dir", run_dir)
+
+    skill = build_filesystem_skill()
+    result = skill.execute(
+        "filesystem.search_files",
+        {"query": "*.mkv", "path": str(tmp_path)},
+    )
+
+    assert result["ok"] is True
+    assert result["backend"] == "gci"
+    assert called == ["es", "gci"]
+    assert "es" in result["backend_errors"]

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import base64
 import codecs
+import fnmatch
+import shutil
+import subprocess
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -13,6 +17,10 @@ _DEFAULT_MAX_READ_CHARS = 4000
 _MAX_READ_CHARS = 200000
 _DEFAULT_ENCODING = "utf-8"
 _MAX_TELEGRAM_DOCUMENT_BYTES = 20 * 1024 * 1024
+_DEFAULT_SEARCH_MAX_ITEMS = 200
+_MAX_SEARCH_ITEMS = 2000
+_SEARCH_BACKEND_AUTO = "auto"
+_SEARCH_BACKENDS = ("es", "gci", "dir")
 
 
 def build_filesystem_skill() -> ExecutableSkill:
@@ -36,6 +44,17 @@ def build_filesystem_skill() -> ExecutableSkill:
                 description="Get metadata for a single file.",
                 args={
                     "path": "file path; relative paths are resolved from current working directory",
+                },
+            ),
+            SkillCommandSpec(
+                command="filesystem.search_files",
+                description="Search files by name pattern with backend fallback: es -> gci -> dir.",
+                args={
+                    "query": "file name query; wildcard patterns * and ? are supported",
+                    "path": "optional root directory to search in, default current directory",
+                    "backend": "optional: auto|es|gci|dir, default auto",
+                    "recursive": "optional boolean, default true",
+                    "max_items": "optional integer 1..2000, default 200",
                 },
             ),
             SkillCommandSpec(
@@ -78,6 +97,8 @@ def build_filesystem_skill() -> ExecutableSkill:
             return _list_directory(args)
         if command == "filesystem.file_info":
             return _file_info(args)
+        if command == "filesystem.search_files":
+            return _search_files(args)
         if command == "filesystem.read_file":
             return _read_file(args)
         if command == "filesystem.write_file":
@@ -178,6 +199,98 @@ def _file_info(args: dict[str, object]) -> dict[str, object]:
             "modified_at": _to_utc_iso(file_stat.st_mtime),
             "accessed_at": _to_utc_iso(file_stat.st_atime),
         },
+    }
+
+
+def _search_files(args: dict[str, object]) -> dict[str, object]:
+    root_path, path_error = _parse_path_arg(args=args, key="path", default=".")
+    if path_error:
+        return {"ok": False, "message": path_error}
+    assert root_path is not None
+    if not root_path.exists():
+        return {"ok": False, "message": f"Directory does not exist: {_stringify_path(root_path)}"}
+    if not root_path.is_dir():
+        return {"ok": False, "message": f"Path is not a directory: {_stringify_path(root_path)}"}
+
+    query, query_error = _parse_required_string_arg(args.get("query"), key="query")
+    if query_error:
+        return {"ok": False, "message": query_error}
+    assert query is not None
+
+    backend, backend_error = _parse_search_backend(args.get("backend"))
+    if backend_error:
+        return {"ok": False, "message": backend_error}
+    assert backend is not None
+
+    recursive, recursive_error = _parse_bool_arg(args.get("recursive"), key="recursive", default=True)
+    if recursive_error:
+        return {"ok": False, "message": recursive_error}
+    assert recursive is not None
+
+    max_items, max_items_error = _parse_search_max_items(args.get("max_items"))
+    if max_items_error:
+        return {"ok": False, "message": max_items_error}
+    assert max_items is not None
+
+    search_pattern = _normalize_search_pattern(query)
+    backends = _resolve_search_backend_order(backend)
+    errors: dict[str, str] = {}
+
+    for current_backend in backends:
+        if not _is_search_backend_available(current_backend):
+            errors[current_backend] = "backend is not available"
+            continue
+
+        runner = _SEARCH_BACKEND_RUNNERS[current_backend]
+        try:
+            raw_paths = runner(
+                root_path=root_path,
+                search_pattern=search_pattern,
+                recursive=recursive,
+                max_items=max_items + 1,
+            )
+        except Exception as exc:
+            errors[current_backend] = str(exc)
+            continue
+
+        records = _normalize_search_results(
+            raw_paths=raw_paths,
+            root_path=root_path,
+            search_pattern=search_pattern,
+            max_items=max_items,
+        )
+        if records is None:
+            errors[current_backend] = "unable to normalize backend output"
+            continue
+
+        entries, total_results = records
+        truncated = total_results > len(entries)
+        root_display = _stringify_path(root_path)
+        return {
+            "ok": True,
+            "message": (
+                f"Search completed with backend={current_backend}: {len(entries)} result(s) "
+                f"for pattern {search_pattern!r} in {root_display}"
+            ),
+            "backend": current_backend,
+            "query": query,
+            "pattern": search_pattern,
+            "path": root_display,
+            "recursive": recursive,
+            "returned_entries": len(entries),
+            "total_results": total_results,
+            "truncated": truncated,
+            "entries": entries,
+            "backend_errors": errors,
+        }
+
+    return {
+        "ok": False,
+        "message": (
+            "No available search backend succeeded. "
+            f"Tried in order: {', '.join(backends)}"
+        ),
+        "backend_errors": errors,
     }
 
 
@@ -508,6 +621,257 @@ def _parse_optional_string_arg(
         return None, f"{key} must be a string."
     normalized = raw_value.strip()
     return normalized or None, None
+
+
+def _parse_required_string_arg(raw_value: object, *, key: str) -> tuple[str | None, str | None]:
+    if not isinstance(raw_value, str):
+        return None, f"{key} must be a non-empty string."
+    normalized = raw_value.strip()
+    if not normalized:
+        return None, f"{key} must be a non-empty string."
+    return normalized, None
+
+
+def _parse_search_backend(raw_value: object) -> tuple[str | None, str | None]:
+    if raw_value is None:
+        return _SEARCH_BACKEND_AUTO, None
+    if not isinstance(raw_value, str):
+        return None, "backend must be one of: auto, es, gci, dir."
+    normalized = raw_value.strip().lower() or _SEARCH_BACKEND_AUTO
+    if normalized == _SEARCH_BACKEND_AUTO or normalized in _SEARCH_BACKENDS:
+        return normalized, None
+    return None, "backend must be one of: auto, es, gci, dir."
+
+
+def _parse_search_max_items(raw_value: object) -> tuple[int | None, str | None]:
+    if raw_value is None:
+        return _DEFAULT_SEARCH_MAX_ITEMS, None
+    if isinstance(raw_value, bool):
+        return None, "max_items must be an integer between 1 and 2000."
+    if isinstance(raw_value, int):
+        value = raw_value
+    elif isinstance(raw_value, str):
+        normalized = raw_value.strip()
+        if not normalized:
+            return _DEFAULT_SEARCH_MAX_ITEMS, None
+        try:
+            value = int(normalized)
+        except ValueError:
+            return None, "max_items must be an integer between 1 and 2000."
+    else:
+        return None, "max_items must be an integer between 1 and 2000."
+
+    if value < 1 or value > _MAX_SEARCH_ITEMS:
+        return None, "max_items must be an integer between 1 and 2000."
+    return value, None
+
+
+def _resolve_search_backend_order(backend: str) -> tuple[str, ...]:
+    if backend == _SEARCH_BACKEND_AUTO:
+        return _SEARCH_BACKENDS
+    return (backend,)
+
+
+def _normalize_search_pattern(query: str) -> str:
+    normalized = query.strip()
+    if not normalized:
+        return "*"
+    if any(token in normalized for token in ("*", "?")):
+        return normalized
+    return f"*{normalized}*"
+
+
+def _normalize_search_results(
+    *,
+    raw_paths: list[str],
+    root_path: Path,
+    search_pattern: str,
+    max_items: int,
+) -> tuple[list[dict[str, object]], int] | None:
+    if not isinstance(raw_paths, list):
+        return None
+
+    entries: list[dict[str, object]] = []
+    seen: set[str] = set()
+    normalized_total = 0
+
+    for raw_item in raw_paths:
+        if not isinstance(raw_item, str):
+            continue
+        cleaned = raw_item.strip().strip('"')
+        if not cleaned:
+            continue
+
+        path = Path(cleaned).expanduser()
+        if not path.is_absolute():
+            path = (root_path / path).resolve(strict=False)
+        else:
+            path = path.resolve(strict=False)
+
+        if not _is_path_within(path, root_path):
+            continue
+        if not path.is_file():
+            continue
+        if not fnmatch.fnmatch(path.name.lower(), search_pattern.lower()):
+            continue
+
+        normalized_key = str(path).lower()
+        if normalized_key in seen:
+            continue
+        seen.add(normalized_key)
+
+        normalized_total += 1
+        if len(entries) >= max_items:
+            continue
+
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+
+        entries.append(
+            {
+                "name": path.name,
+                "path": _stringify_path(path),
+                "parent": _stringify_path(path.parent),
+                "size_bytes": stat.st_size,
+                "modified_at": _to_utc_iso(stat.st_mtime),
+            }
+        )
+
+    return entries, normalized_total
+
+
+def _is_path_within(path: Path, root_path: Path) -> bool:
+    normalized_path = path.resolve(strict=False)
+    normalized_root = root_path.resolve(strict=False)
+    try:
+        normalized_path.relative_to(normalized_root)
+        return True
+    except ValueError:
+        return False
+
+
+def _is_search_backend_available(backend: str) -> bool:
+    if backend == "es":
+        return shutil.which("es") is not None
+    if backend == "gci":
+        return _resolve_powershell_executable() is not None
+    if backend == "dir":
+        return shutil.which("cmd") is not None
+    return False
+
+
+def _resolve_powershell_executable() -> str | None:
+    for candidate in ("powershell", "pwsh"):
+        executable = shutil.which(candidate)
+        if executable is not None:
+            return executable
+    return None
+
+
+def _search_with_es(
+    *,
+    root_path: Path,
+    search_pattern: str,
+    recursive: bool,
+    max_items: int,
+) -> list[str]:
+    del recursive
+    executable = shutil.which("es")
+    if executable is None:
+        raise RuntimeError("es backend is unavailable")
+
+    query = search_pattern if any(token in search_pattern for token in ("*", "?")) else f"*{search_pattern}*"
+    completed = _run_subprocess([executable, "-n", str(max_items), query])
+    if completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip() or "unknown es error"
+        raise RuntimeError(message)
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _search_with_gci(
+    *,
+    root_path: Path,
+    search_pattern: str,
+    recursive: bool,
+    max_items: int,
+) -> list[str]:
+    executable = _resolve_powershell_executable()
+    if executable is None:
+        raise RuntimeError("gci backend is unavailable")
+
+    escaped_root = _escape_powershell_string(_stringify_path(root_path))
+    escaped_pattern = _escape_powershell_string(search_pattern)
+    recurse_part = "-Recurse" if recursive else ""
+    script = (
+        f"$items = Get-ChildItem -LiteralPath '{escaped_root}' -File {recurse_part} -ErrorAction SilentlyContinue; "
+        f"$items | Where-Object {{ $_.Name -like '{escaped_pattern}' }} | "
+        f"Select-Object -First {max_items} -ExpandProperty FullName"
+    )
+    completed = _run_subprocess([executable, "-NoProfile", "-Command", script])
+    if completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip() or "unknown gci error"
+        raise RuntimeError(message)
+    return [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def _search_with_dir(
+    *,
+    root_path: Path,
+    search_pattern: str,
+    recursive: bool,
+    max_items: int,
+) -> list[str]:
+    executable = shutil.which("cmd")
+    if executable is None:
+        raise RuntimeError("dir backend is unavailable")
+
+    args = [executable, "/d", "/c", "dir", "/b", "/a:-d"]
+    if recursive:
+        args.append("/s")
+    args.append(str(root_path / search_pattern))
+
+    completed = _run_subprocess(args)
+    if completed.returncode not in (0, 1):
+        message = completed.stderr.strip() or completed.stdout.strip() or "unknown dir error"
+        raise RuntimeError(message)
+
+    lines = [line.strip() for line in completed.stdout.splitlines() if line.strip()]
+    results: list[str] = []
+    for line in lines:
+        if len(results) >= max_items:
+            break
+        candidate = Path(line)
+        if not candidate.is_absolute():
+            candidate = root_path / candidate
+        results.append(str(candidate))
+    return results
+
+
+def _run_subprocess(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        check=False,
+        timeout=20,
+    )
+
+
+def _escape_powershell_string(value: str) -> str:
+    return value.replace("'", "''")
+
+
+_SEARCH_BACKEND_RUNNERS: dict[
+    str,
+    Callable[..., list[str]],
+] = {
+    "es": _search_with_es,
+    "gci": _search_with_gci,
+    "dir": _search_with_dir,
+}
 
 
 def _build_telegram_document_for_path(

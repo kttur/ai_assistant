@@ -318,7 +318,7 @@ context
 ## Largest Python Files in `src`
 
 - `src\ai_assistant\providers\llm\user_selectable_provider.py`: 1169 lines
-- `src\ai_assistant\providers\system\skills\filesystem_skill.py`: 562 lines
+- `src\ai_assistant\providers\system\skills\filesystem_skill.py`: 926 lines
 - `src\ai_assistant\providers\remote\ws_hub.py`: 518 lines
 - `src\ai_assistant\core\service.py`: 516 lines
 - `src\ai_assistant\providers\llm\auto_router.py`: 426 lines
@@ -340,11 +340,11 @@ context
 - `tests\modules\telegram\test_handlers_basic.py`: 390 lines
 - `tests\modules\telegram\_shared.py`: 353 lines
 - `tests\core\test_assistant_service.py`: 348 lines
-- `tests\modules\telegram\test_handlers_remote.py`: 322 lines
+- `tests\modules\telegram\test_handlers_remote.py`: 342 lines
 - `tests\providers\llm\test_auto_router.py`: 284 lines
+- `tests\providers\system\test_filesystem_skill.py`: 251 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\config\test_settings.py`: 221 lines
-- `tests\modules\telegram\test_handlers_media.py`: 206 lines
 
 ## Notes for LLM Agents
 
