@@ -97,3 +97,14 @@ def test_command_executor_catalog_and_execution() -> None:
     assert media.actions == ["next_track"]
     assert mpc.actions == ["audio_ru"]
     assert output.actions == ["toggle"]
+
+
+def test_command_executor_can_enable_filesystem_skill() -> None:
+    import asyncio
+
+    executor = SystemAssistantCommandExecutor(enable_filesystem_skill=True)
+    catalog = asyncio.run(executor.get_command_catalog())
+
+    commands = {item["command"] for item in catalog}
+    assert "filesystem.list_directory" in commands
+    assert "filesystem.file_info" in commands

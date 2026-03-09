@@ -46,6 +46,7 @@ def run() -> None:
         output_controller=output_controller,
         active_skill_ids=settings.remote_client_active_skills,
         skill_factories=settings.remote_client_skill_factories,
+        enable_filesystem_skill=True,
     )
 
     client_name = settings.remote_client_name.strip() or platform.node() or "Windows PC"

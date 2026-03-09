@@ -201,6 +201,7 @@ ai_assistant
 │   │   ├── skills
 │   │   │   ├── __init__.py
 │   │   │   ├── custom_skill_loader.py
+│   │   │   ├── filesystem_skill.py
 │   │   │   ├── media_skill.py
 │   │   │   ├── mpc_skill.py
 │   │   │   └── output_skill.py
@@ -282,6 +283,7 @@ tests
     │   └── test_in_memory_user_settings_store.py
     ├── system
     │   ├── test_assistant_command_executor.py
+    │   ├── test_filesystem_skill.py
     │   ├── test_hybrid_command_executor.py
     │   ├── test_system_skill_filter.py
     │   └── test_voicemeeter_output_controller.py
@@ -319,6 +321,7 @@ context
 - `src\ai_assistant\providers\remote\ws_hub.py`: 518 lines
 - `src\ai_assistant\core\service.py`: 438 lines
 - `src\ai_assistant\providers\llm\auto_router.py`: 426 lines
+- `src\ai_assistant\providers\system\skills\filesystem_skill.py`: 417 lines
 - `src\ai_assistant\config\settings.py`: 325 lines
 - `src\ai_assistant\providers\remote\postgres_remote_device_store.py`: 324 lines
 - `src\ai_assistant\modules\telegram\handler_methods\handle_settings_callback.py`: 308 lines
@@ -329,7 +332,6 @@ context
 - `src\ai_assistant\providers\settings\in_memory_user_settings_store.py`: 232 lines
 - `src\ai_assistant\modules\telegram\handlers.py`: 224 lines
 - `src\ai_assistant\devtools\sync_docs.py`: 223 lines
-- `src\ai_assistant\providers\terminal\shell_terminal_interactive.py`: 222 lines
 
 ## Largest Python Files in `tests`
 
@@ -339,10 +341,10 @@ context
 - `tests\modules\telegram\_shared.py`: 341 lines
 - `tests\core\test_assistant_service.py`: 289 lines
 - `tests\providers\llm\test_auto_router.py`: 284 lines
+- `tests\modules\telegram\test_handlers_remote.py`: 264 lines
 - `tests\modules\telegram\test_handlers_permissions.py`: 235 lines
 - `tests\config\test_settings.py`: 221 lines
 - `tests\modules\telegram\test_handlers_media.py`: 206 lines
-- `tests\providers\llm\test_ollama_provider.py`: 184 lines
 
 ## Notes for LLM Agents
 

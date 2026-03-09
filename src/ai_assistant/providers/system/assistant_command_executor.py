@@ -8,6 +8,7 @@ from ai_assistant.core.interfaces import (
 )
 from ai_assistant.providers.system.skills import (
     SystemSkillFactoryContext,
+    build_filesystem_skill,
     build_media_skill,
     build_mpc_skill,
     build_output_skill,
@@ -25,6 +26,7 @@ class SystemAssistantCommandExecutor(AssistantCommandExecutor):
         output_controller: OutputController | None = None,
         active_skill_ids: tuple[str, ...] | None = None,
         skill_factories: tuple[str, ...] | None = None,
+        enable_filesystem_skill: bool = False,
     ) -> None:
         skills: list[ExecutableSkill] = []
 
@@ -39,6 +41,9 @@ class SystemAssistantCommandExecutor(AssistantCommandExecutor):
         output_skill = build_output_skill(output_controller)
         if output_skill is not None:
             skills.append(output_skill)
+
+        if enable_filesystem_skill:
+            skills.append(build_filesystem_skill())
 
         context = SystemSkillFactoryContext(
             media_controller=media_controller,

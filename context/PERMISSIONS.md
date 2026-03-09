@@ -101,6 +101,17 @@ Remote tools (when user has linked online devices) are exposed as `remote.<comma
 
 - `assistant/remote.<command>`
 - example: `assistant/remote.media.play_pause`
+- filesystem commands:
+  - `assistant/remote.filesystem.list_directory`
+  - `assistant/remote.filesystem.file_info`
+  - `assistant/remote.filesystem.read_file`
+  - `assistant/remote.filesystem.write_file`
+
+For `/pc_run`, filesystem commands have additional fine-grained checks:
+
+- `filesystem.list_directory` -> requires `assistant/remote.filesystem.list_directory`
+- `filesystem.file_info` and `filesystem.read_file` -> require `assistant/remote.filesystem.read_file`
+- `filesystem.write_file` -> requires `assistant/remote.filesystem.write_file`
 
 If the corresponding controller/client is not connected, the command is not included in the available LLM catalog.
 

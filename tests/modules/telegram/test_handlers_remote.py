@@ -168,3 +168,97 @@ def test_handle_pc_run_dispatches_remote_command() -> None:
 
     assert hub.executed == [(101, "default", "media.play_pause")]
     assert "Remote command result:" in update.effective_message.replies[0]
+
+
+def test_handle_pc_run_requires_list_permission_for_filesystem_listing() -> None:
+    assistant = FakeAssistantService()
+    permissions = FakePermissionChecker(
+        allowed={(101, "general", "usage"), (101, "command", "pc_run")}
+    )
+    hub = FakeRemoteHub()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        permission_checker=permissions,
+        remote_ws_hub=hub,
+    )
+    update = FakeUpdate(user_id=101)
+    context = SimpleNamespace(args=["filesystem.list_directory", '{"path":"C:\\\\tmp"}'])
+
+    asyncio.run(handlers.handle_pc_run(update, context))
+
+    assert hub.executed == []
+    assert "assistant/remote.filesystem.list_directory" in update.effective_message.replies[0]
+
+
+def test_handle_pc_run_requires_read_permission_for_filesystem_read() -> None:
+    assistant = FakeAssistantService()
+    permissions = FakePermissionChecker(
+        allowed={(101, "general", "usage"), (101, "command", "pc_run")}
+    )
+    hub = FakeRemoteHub()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        permission_checker=permissions,
+        remote_ws_hub=hub,
+    )
+    update = FakeUpdate(user_id=101)
+    context = SimpleNamespace(args=["filesystem.read_file", '{"path":"C:\\\\tmp\\\\note.txt"}'])
+
+    asyncio.run(handlers.handle_pc_run(update, context))
+
+    assert hub.executed == []
+    assert "assistant/remote.filesystem.read_file" in update.effective_message.replies[0]
+
+
+def test_handle_pc_run_requires_write_permission_for_filesystem_write() -> None:
+    assistant = FakeAssistantService()
+    permissions = FakePermissionChecker(
+        allowed={(101, "general", "usage"), (101, "command", "pc_run")}
+    )
+    hub = FakeRemoteHub()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        permission_checker=permissions,
+        remote_ws_hub=hub,
+    )
+    update = FakeUpdate(user_id=101)
+    context = SimpleNamespace(
+        args=[
+            "filesystem.write_file",
+            '{"path":"C:\\\\tmp\\\\note.txt","content":"hello"}',
+        ]
+    )
+
+    asyncio.run(handlers.handle_pc_run(update, context))
+
+    assert hub.executed == []
+    assert "assistant/remote.filesystem.write_file" in update.effective_message.replies[0]
+
+
+def test_handle_pc_run_allows_filesystem_write_with_permission() -> None:
+    assistant = FakeAssistantService()
+    permissions = FakePermissionChecker(
+        allowed={
+            (101, "general", "usage"),
+            (101, "command", "pc_run"),
+            (101, "assistant", "remote.filesystem.write_file"),
+        }
+    )
+    hub = FakeRemoteHub()
+    handlers = TelegramHandlers(
+        assistant_service=assistant,
+        permission_checker=permissions,
+        remote_ws_hub=hub,
+    )
+    update = FakeUpdate(user_id=101)
+    context = SimpleNamespace(
+        args=[
+            "filesystem.write_file",
+            '{"path":"C:\\\\tmp\\\\note.txt","content":"hello"}',
+        ]
+    )
+
+    asyncio.run(handlers.handle_pc_run(update, context))
+
+    assert hub.executed == [(101, "default", "filesystem.write_file")]
+    assert "Remote command result:" in update.effective_message.replies[0]
